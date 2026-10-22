@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SignMeUpDaddy · Sign-up sheets with dad energy</title>
+  <meta name="description" content="Free sign-up sheets and groups for potlucks, volunteer shifts, snack duty, carpools and regular meetups. One tap to sign up, free waitlists, no ads ever.">
+  <meta name="theme-color" content="#fff8ef">
+  <link rel="canonical" href="https://signmeupdaddy.com/">
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+
+  <!-- Open Graph (link previews in iMessage, WhatsApp, Slack, Facebook…). Crawlers don't run JS, so every link previews this card. -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="SignMeUpDaddy">
+  <meta property="og:url" content="https://signmeupdaddy.com/">
+  <meta property="og:title" content="SignMeUpDaddy · Who's bringing the potato salad? Sign 'em up.">
+  <meta property="og:description" content="Free sign-up sheets and groups. One tap to sign up, free waitlists, add-to-calendar, and no ads, ever.">
+  <meta property="og:image" content="https://signmeupdaddy.com/img/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="SignMeUpDaddy: a potluck sign-up sheet with progress bars and a 'No ads, ever' badge.">
+  <meta property="og:locale" content="en_US">
+  <!-- Twitter / X card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="SignMeUpDaddy · Who's bringing the potato salad? Sign 'em up.">
+  <meta name="twitter:description" content="Free sign-up sheets and groups. One tap to sign up, free waitlists, no ads, ever.">
+  <meta name="twitter:image" content="https://signmeupdaddy.com/img/og-image.png">
+  <meta name="twitter:image:alt" content="SignMeUpDaddy: a potluck sign-up sheet with progress bars and a 'No ads, ever' badge.">
+  <script>
+    // Apply saved theme before paint to avoid a flash.
+    try { var t = JSON.parse(localStorage.getItem('smud:theme')); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&display=swap">
+  <link rel="stylesheet" href="css/styles.css">
+  <!-- QR codes: qrcode-generator 1.4.4 (pinned) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" defer></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#app">Skip to content</a>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="#/" aria-label="SignMeUpDaddy home">
+        <span id="logo-slot" class="logo-slot"></span>
+        <span class="brand-name">SignMeUp<span class="accent">Daddy</span></span>
+      </a>
+      <nav class="site-nav" aria-label="Main">
+        <ul>
+          <li><a href="#/mine" data-nav="mine">My sheets</a></li>
+          <li><a href="#/groups" data-nav="groups">Groups</a></li>
+          <li><a class="btn btn-primary btn-sm nav-cta" href="#/new" data-nav="new"><span id="nav-new-icon" class="nav-icon"></span><span>Create a sheet</span></a></li>
+        </ul>
+      </nav>
+      <button type="button" id="theme-toggle" class="icon-btn theme-toggle" aria-label="Toggle dark mode"></button>
+    </div>
+  </header>
+
+  <p id="storage-banner" class="storage-banner" hidden>Heads up: your browser is blocking storage, so changes won't survive a refresh.</p>
+
+  <main id="app" tabindex="-1">
+    <noscript><div class="container"><p>SignMeUpDaddy needs JavaScript to run. (It's a prototype. Even dads need a little script.)</p></div></noscript>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div>
+        <p class="brand-name">SignMeUp<span class="accent">Daddy</span></p>
+        <p class="small">Sign-up sheets and groups with dad energy. <strong>No ads, ever.</strong></p>
+      </div>
+      <nav aria-label="Footer">
+        <ul class="footer-links">
+          <li><a href="#/new">Create a sheet</a></li>
+          <li><a href="#/groups">Groups</a></li>
+          <li><a href="#/s/room12-potluck">Demo sheet</a></li>
+          <li><a href="#/g/trail-dads">Demo group</a></li>
+        </ul>
+      </nav>
+      <p class="small joke" id="footer-joke"></p>
+      <p class="tiny muted">Prototype. Data is stored only in this browser. © 2026 SignMeUpDaddy.</p>
+    </div>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+</body>
+</html>
