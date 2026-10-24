@@ -1,5 +1,5 @@
 // Demo sheets created on first load so the app isn't empty.
-import { uid, isoDate, nextDow, addDays } from './util.js';
+import { uid, isoDate, nextDow, upcomingDow, addDays } from './util.js';
 
 function signup(slotId, name, contact, note, minsAgo, status = 'confirmed') {
   const t = Date.now() - minsAgo * 60000;
@@ -78,7 +78,8 @@ export function buildSeeds() {
   ];
 
   /* ---------- Demo group: Saturday Trail Dads ---------- */
-  const satD = nextDow(6);
+  // Today counts (nextOccurrence includes today), so on a Saturday the seeded RSVPs land on today's hike.
+  const satD = upcomingDow(6);
   const sats = [0, 1, 2, 3].map((i) => isoDate(addDays(satD, i * 7)));
   const snacks = {
     id: 'trail-snacks',
@@ -149,7 +150,7 @@ export function buildSeeds() {
       {
         id: 'pancakes', title: 'Pancake breakfast + trail cleanup', description: 'Griddle at the pavilion, then an hour of picking up litter. Kids welcome.',
         location: 'Eagle Creek Pavilion', date: isoDate(addDays(satD, 14)), start: '08:00', end: '11:00',
-        recurrence: 'monthly', capacity: 0, sheetIds: [], createdAt: now - 6 * 86400000,
+        recurrence: 'none', capacity: 0, sheetIds: [], createdAt: now - 6 * 86400000, // one-off: "monthly" would drift off Saturdays
       },
     ],
     rsvps: [],

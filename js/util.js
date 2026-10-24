@@ -57,6 +57,10 @@ export function nextDow(dow, from = today()) {
   if (diff === 0) diff = 7;
   return addDays(from, diff);
 }
+// Next given weekday on or after `from` (today counts).
+export function upcomingDow(dow, from = today()) {
+  return addDays(from, (dow - from.getDay() + 7) % 7);
+}
 export function fmtDate(s, opts = { weekday: 'short', month: 'short', day: 'numeric' }) {
   const d = parseDate(s);
   return d ? d.toLocaleDateString(undefined, opts) : '';
@@ -96,6 +100,29 @@ export const firstName = (name) => String(name || '').trim().split(/\s+/)[0] || 
 export const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 export const isPhone = (s) => /^[\d\s()+.\-]+$/.test(s) && s.replace(/\D/g, '').length >= 7;
 
+// Invisible characters that make lookalike strings (zero-width spaces/joiners, BOM, soft hyphen, word joiner, bidi marks).
+const INVISIBLE = /[­᠎​-‏‪-‮⁠-⁤﻿]/g;
+// NFKC (full-width "ＯＬＧＡ" -> "OLGA", ligatures, compatibility digits), invisible characters removed, trimmed.
+export const cleanText = (s) => String(s ?? '').normalize('NFKC').replace(INVISIBLE, '').trim();
+
+// Comparable form of an email or phone: "(555) 111-2222" and "555-111-2222" (or "+1 555 111 2222") match;
+// " OLGA@x.co. ", "ｏｌｇａ@x.co" and "olga@x.co" + zero-width space all match "olga@x.co".
+export function contactKey(c) {
+  const s = cleanText(c).toLowerCase();
+  if (!s) return '';
+  if (s.includes('@')) return s.replace(/\s+/g, '').replace(/\.+$/, ''); // a trailing dot on the domain is the same domain
+  let d = s.replace(/\D/g, '');
+  if (d.length === 11 && d.startsWith('1')) d = d.slice(1);
+  return d ? `tel:${d}` : s;
+}
+
+// Strict whole-number parse for count fields. "2.5", "-5", "1e3", "" and "abc" all give NaN.
+export function parseCount(v) {
+  if (typeof v === 'number') return Number.isInteger(v) && v >= 0 ? v : NaN;
+  const s = String(v ?? '').trim();
+  return /^\d{1,6}$/.test(s) ? Number(s) : NaN;
+}
+
 /* ---------- Browser helpers ---------- */
 export async function copyText(text) {
   try {
@@ -110,7 +137,8 @@ export async function copyText(text) {
     ta.setAttribute('readonly', '');
     ta.style.position = 'fixed';
     ta.style.opacity = '0';
-    document.body.appendChild(ta);
+    // Inside a modal dialog the rest of the page is inert, so the fallback textarea must live in the dialog.
+    (document.querySelector('dialog[open]') || document.body).appendChild(ta);
     ta.select();
     const ok = document.execCommand('copy');
     ta.remove();
@@ -136,14 +164,26 @@ export function slugify(s) {
   return String(s || 'sheet').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'sheet';
 }
 
-let toastTimer;
-export function toast(msg) {
+// Toasts queue up, so a second message (e.g. "X moved up") doesn't wipe out the first.
+const toastQueue = [];
+let toastBusy = false;
+function nextToast() {
   const el = document.getElementById('toast');
-  if (!el) return;
+  const msg = toastQueue.shift();
+  if (!el || msg == null) { toastBusy = false; return; }
+  toastBusy = true;
   el.textContent = msg;
   el.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(nextToast, toastQueue.length ? 250 : 0);
+  }, toastQueue.length ? 2200 : 2600);
+}
+export function toast(msg) {
+  if (!msg || toastQueue[toastQueue.length - 1] === msg) return;
+  toastQueue.push(String(msg));
+  if (toastQueue.length > 4) toastQueue.splice(0, toastQueue.length - 4);
+  if (!toastBusy) nextToast();
 }
 
 // Polite screen-reader announcement (e.g. progress updates).

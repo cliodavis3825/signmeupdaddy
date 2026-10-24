@@ -134,7 +134,7 @@ export async function landingView(root, params) {
           <li>${icon('check')} Weekly, every-other-week or monthly events</li>
           <li>${icon('check')} RSVP Going / Maybe / Can't, with caps and a free waitlist</li>
           <li>${icon('check')} Attach a sign-up sheet: "3/4 snacks claimed"</li>
-          <li>${icon('check')} Announcements, co-organizers, CSV export</li>
+          <li>${icon('check')} Announcements and CSV export (co-organizers come with Group Plus)</li>
         </ul>
         <div class="btn-row">
           <a class="btn btn-primary" href="#/groups/new">Start a group ${icon('arrowR')}</a>
@@ -146,8 +146,8 @@ export async function landingView(root, params) {
         <div class="mini-group-body">
           <p class="mini-title">Saturday Trail Dads</p>
           <p class="small muted">10 members · Every Saturday, 7:30 AM</p>
-          <div class="bar" aria-hidden="true"><span style="width:70%"></span></div>
-          <p class="small">7 going · 3 spots left</p>
+          <div class="bar" aria-hidden="true"><span style="width:60%"></span></div>
+          <p class="small">6 going · 4 spots left · 1 maybe</p>
           <p class="small mini-sheet">🥨 <strong>3/4</strong> snacks claimed</p>
         </div>
       </a>

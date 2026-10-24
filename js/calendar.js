@@ -40,11 +40,26 @@ export function googleCalendarUrl(ev) {
 
 const icsEscape = (s) => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
 
-function fold(line) {
+// UTF-8 length of one code point (a lone surrogate is written as U+FFFD, 3 bytes).
+const utf8Len = (cp) => (cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4);
+
+// RFC 5545 §3.1: lines are at most 75 octets; continuation lines start with one space.
+// Iterating with for...of walks whole code points, so a fold never splits a UTF-8 sequence or a surrogate pair.
+export function fold(line, limit = 75) {
   const out = [];
-  let rest = line;
-  while (rest.length > 73) { out.push(rest.slice(0, 73)); rest = ' ' + rest.slice(73); }
-  out.push(rest);
+  let cur = '';
+  let bytes = 0;
+  for (const ch of line) {
+    const n = utf8Len(ch.codePointAt(0));
+    if (bytes + n > limit) {
+      out.push(cur);
+      cur = ' ';
+      bytes = 1;
+    }
+    cur += ch;
+    bytes += n;
+  }
+  out.push(cur);
   return out.join('\r\n');
 }
 
@@ -70,7 +85,7 @@ export function buildIcs(ev, uidSeed) {
   lines.push(`SUMMARY:${icsEscape(ev.title)}`, `DESCRIPTION:${icsEscape(ev.details)}`);
   if (ev.location) lines.push(`LOCATION:${icsEscape(ev.location)}`);
   lines.push('END:VEVENT', 'END:VCALENDAR');
-  return lines.map(fold).join('\r\n') + '\r\n';
+  return lines.map((l) => fold(l)).join('\r\n') + '\r\n';
 }
 
 // RRULE for a group event's recurrence ('weekly' | 'biweekly' | 'monthly'); null for one-offs.

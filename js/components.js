@@ -6,6 +6,9 @@ import { qrSvg } from './qr.js';
 // Cross-route one-shot state (e.g. open the share panel right after publishing).
 export const flash = { justPublished: null };
 
+// Unsaved-changes guard for edit pages. The router asks before leaving `path` while active() is true.
+export const leaveGuard = { path: null, active: () => false, message: '' };
+
 /* ---------- Icons (inline SVG, decorative) ---------- */
 const PATHS = {
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
@@ -128,7 +131,7 @@ export function renderSheet(sheet, opts = {}) {
 
 /* ---------- Dialogs ---------- */
 
-export function openDialog({ title, body, className = '', onMount, onClose }) {
+export function openDialog({ title, body, className = '', onMount, onClose, beforeClose }) {
   const opener = document.activeElement;
   const dlg = document.createElement('dialog');
   const tid = `dlg-${uid(5)}`;
@@ -141,9 +144,25 @@ export function openDialog({ title, body, className = '', onMount, onClose }) {
   </div>`.s;
   document.body.appendChild(dlg);
   let downOnBackdrop = false;
+  // beforeClose (optional) can veto Cancel / Close / Esc / backdrop, e.g. to confirm discarding edits.
+  const tryClose = async () => {
+    if (beforeClose && !(await beforeClose())) return;
+    dlg.close();
+  };
   dlg.addEventListener('pointerdown', (e) => { downOnBackdrop = e.target === dlg; });
   dlg.addEventListener('click', (e) => {
-    if ((e.target === dlg && downOnBackdrop) || e.target.closest('[data-close]')) dlg.close();
+    if ((e.target === dlg && downOnBackdrop) || e.target.closest('[data-close]')) tryClose();
+  });
+  // Handle Esc on keydown: browsers may refuse to let `cancel` be prevented without recent user activation.
+  dlg.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !beforeClose || e.target.closest('dialog') !== dlg) return;
+    e.preventDefault();
+    tryClose();
+  });
+  dlg.addEventListener('cancel', (e) => {
+    if (!beforeClose) return;
+    e.preventDefault();
+    tryClose();
   });
   dlg.addEventListener('close', () => {
     dlg.remove();
@@ -155,13 +174,14 @@ export function openDialog({ title, body, className = '', onMount, onClose }) {
   return dlg;
 }
 
-export function confirmDialog({ title, message, confirmLabel = 'Confirm', danger = false }) {
+export function confirmDialog({ title, message, details = [], confirmLabel = 'Confirm', danger = false }) {
   return new Promise((resolve) => {
     let ok = false;
     openDialog({
       title,
-      className: 'dialog-sm',
+      className: details.length ? '' : 'dialog-sm',
       body: html`<p>${message}</p>
+        ${details.length ? html`<ul class="confirm-details">${details.map((d) => html`<li>${d}</li>`)}</ul>` : ''}
         <div class="dialog-actions">
           <button type="button" class="btn btn-ghost" data-close>Never mind</button>
           <button type="button" class="btn ${danger ? 'btn-danger' : 'btn-primary'}" data-ok autofocus>${confirmLabel}</button>

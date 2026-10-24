@@ -52,14 +52,17 @@
         <ul>
           <li><a href="#/mine" data-nav="mine">My sheets</a></li>
           <li><a href="#/groups" data-nav="groups">Groups</a></li>
-          <li><a class="btn btn-primary btn-sm nav-cta" href="#/new" data-nav="new"><span id="nav-new-icon" class="nav-icon"></span><span>Create a sheet</span></a></li>
+          <li><a class="btn btn-primary btn-sm nav-cta" href="#/new" data-nav="new"><span id="nav-new-icon" class="nav-icon"></span><span>Create<span class="nav-cta-long"> a sheet</span></span></a></li>
         </ul>
       </nav>
       <button type="button" id="theme-toggle" class="icon-btn theme-toggle" aria-label="Toggle dark mode"></button>
     </div>
   </header>
 
-  <p id="storage-banner" class="storage-banner" hidden>Heads up: your browser is blocking storage, so changes won't survive a refresh.</p>
+  <div id="storage-banner" class="storage-banner" role="status" hidden>
+    <p id="storage-text">Heads up: your browser is blocking storage, so changes won't survive a refresh.</p>
+    <button type="button" class="link-btn" id="storage-dismiss">Dismiss<span class="sr-only"> storage notice</span></button>
+  </div>
 
   <main id="app" tabindex="-1">
     <noscript><div class="container"><p>SignMeUpDaddy needs JavaScript to run. (It's a prototype. Even dads need a little script.)</p></div></noscript>

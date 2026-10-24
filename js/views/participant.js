@@ -107,14 +107,14 @@ export async function editView(root, { token }) {
   const slot = sheet.slots.find((s) => s.id === signup.slotId);
   document.title = `Edit your signup · ${sheet.title}`;
 
-  const slotOptions = sheet.slots.map((s) => {
+  const slotOptions = sheet.slots.filter((s) => !s.archived || s.id === signup.slotId).map((s) => {
     const st = slotStats(sheet, s);
     const mineHere = s.id === signup.slotId;
     const w = s.type === 'time' ? ` · ${whenText(sheet, s)}` : '';
     let tag = '';
     if (!mineHere && st.full) tag = sheet.waitlist ? ' (full, join waitlist)' : ' (full)';
     const disabled = !mineHere && st.full && !sheet.waitlist;
-    return html`<option value="${s.id}" ${mineHere ? raw('selected') : ''} ${disabled ? raw('disabled') : ''}>${s.label}${w}${tag}</option>`;
+    return html`<option value="${s.id}" ${mineHere ? raw('selected') : ''} ${disabled ? raw('disabled') : ''}>${s.label}${w}${tag}${s.archived ? ' (removed by the organizer)' : ''}</option>`;
   });
 
   root.innerHTML = html`<div class="container narrow">
@@ -126,6 +126,7 @@ export async function editView(root, { token }) {
           ? html`You're <strong>#${position} on the waitlist</strong> for <strong>${slot.label}</strong>.`
           : html`You're <strong>confirmed</strong> for <strong>${slot.label}</strong>${whenText(sheet, slot) ? ` · ${whenText(sheet, slot)}` : ''}.`}
       </p>
+      ${slot.archived ? html`<p class="callout callout-mustard">The organizer removed this slot from the sheet. Your signup is still saved, so check with them, pick another slot below, or cancel.</p>` : ''}
       <form class="edit-form" novalidate>
         <div class="form-error" role="alert" hidden></div>
         <div class="field-row">

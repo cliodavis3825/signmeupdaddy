@@ -18,7 +18,7 @@ On first load the app adds three demo sheets and one demo group, and treats this
 - `#/s/fall-fest`: volunteer shifts with time slots
 - `#/g/trail-dads`: **Saturday Trail Dads**, a weekly hike with a capped RSVP list and an attached snack sheet ("3/4 claimed")
 
-To reset everything, clear the site's localStorage (DevTools → Application → Local Storage).
+To reset everything, clear the site's localStorage (DevTools → Application → Local Storage). If saved data is ever unreadable, the app keeps a copy under `smud:v2:backup` before starting fresh and says so in a banner.
 
 ## Features
 
@@ -30,6 +30,7 @@ To reset everything, clear the site's localStorage (DevTools → Application →
 - **Edit/cancel** (`#/edit/<token>`): change name, contact, note or slot, or cancel. When a confirmed spot opens up, the first person on that slot's waitlist moves in.
 - **Share panel**: copy link, QR code, an editable pre-written group-text message (copy, `sms:` link, Web Share when available).
 - **Organizer dashboard** (`#/s/<id>/manage`): stats, who signed up for what, open spots, waitlists, remove a signup (with waitlist promotion), CSV export (guarded against formula injection), delete sheet, and an "only open slots" filter.
+- **Edit after publishing** (`#/s/<id>/edit`): the same 3-step builder, pre-filled. Change the title, details, date, slots and capacities. Signups are never deleted: removing a slot that has people hides it from the sheet and keeps the signups on the dashboard (with a **Restore slot** button); lowering a capacity keeps everyone already confirmed. Both, and date/time changes on slots with people, are spelled out on the review step and confirmed before saving. Raising a capacity moves waitlisted people in.
 - **My sheets** on the home page (`#/mine`).
 - **Nudge**: organizers of a standalone sheet see "Doing this regularly? Turn it into a Group." It opens the group builder pre-filled from that sheet, with the sheet already attached.
 
@@ -37,11 +38,13 @@ To reset everything, clear the site's localStorage (DevTools → Application →
 - **Groups home** (`#/groups`): pitch, my groups, how it works ("Event = RSVP + sheet"), pricing.
 - **3-step group builder** (`#/groups/new`): name, emoji, cover colour, description, location, public/private, then an optional first event (one-off, weekly, biweekly or monthly; capacity; attach a sheet), then review. The last step can include a pinned welcome post.
 - **Group page** (`#/g/<id>`): cover, members with roles, upcoming events (next date plus the following few), announcements (one pinned), share link and QR. Private groups show only the cover until you join.
-- **Join** with name + email only, no account.
+- **Join** with name + email only, no account. Each member gets a **personal link** (`#/g/<id>/me/<token>`, shown in the group sidebar; stands in for an emailed magic link). The token is the identity: joining with an email that's already in the group is refused ("Use your personal link to get back in"), so nobody can take over another member, the organizer or a co-organizer by typing their email.
 - **RSVP** Going / Maybe / Can't with capacity limits and a free waitlist. Changing from Going promotes the next person in line. RSVPing as a non-member joins you to the group in the same step.
 - **Attached sign-up sheets**: create a sheet inline from a template, or attach an existing one. Template slots are generated for each of the event's next occurrences. Event cards show progress per date ("3/4 claimed"). **After you RSVP Going, a prompt asks "Want to bring something?" and you can claim a slot with one tap**, with calendar and edit links right there.
 - **Event page** (`#/g/<id>/e/<eventId>/<date>`): date picker chips, RSVP, who's going (visible to everyone), per-date slots to claim. Add to calendar for one date (Google or `.ics`) or for the whole series (`.ics` with `RRULE`, or Google with recurrence).
-- **Co-organizers**: organizers can promote members. A co-organizer's browser can then post, create events, attach sheets and open the organizer view.
+- **Co-organizers** (a Group Plus feature; plans aren't enforced in the prototype): organizers can promote members. A co-organizer can then post, create and edit events, attach sheets, remove regular members and open the organizer view. They're authorised by their own member token plus their current role (never the group's admin token), and the organizer view never shows anyone's tokens. Only the organizer changes roles. Demoting or removing a co-organizer takes effect immediately and rotates the group's admin token and the organizer's member token, so nothing they saved keeps working.
+- **Edit an event** after publishing (organizers, from the event page): title, date, time, repeats, spots, location, details. RSVPs are never deleted; ones on dates that drop out of the series are kept and come back if the change is undone. Shrinking spots below the current "going" count, orphaning RSVPs, or moving dates of an event with an attached sheet is confirmed first. More spots move waitlisted people in.
+- **Private groups** also lock their attached sheets: a non-member opening the sheet link sees a "belongs to a private group" page.
 - **Organizer view** (`#/g/<id>/manage`): member list (role changes, remove), RSVP counts per event and date with sheet progress, members CSV and RSVPs CSV, and a member counter against the free plan's 50-member cap.
 
 ### Quality
@@ -77,7 +80,8 @@ docs/                 Market research briefs
 
 ## Known limitations (prototype)
 - **No backend.** Everything lives in this browser's localStorage. Shared links only work in the same browser profile, and "live" updates only reach other tabs in the same browser.
-- **No email/SMS.** Edit links and organizer access are shown on screen instead of emailed. Organizer and co-organizer rights belong to the browser that holds the token.
+- **No email/SMS.** Edit links, personal links and organizer access are shown on screen instead of emailed. Organizer and co-organizer rights belong to the browser that holds the token.
+- **Storage errors are surfaced, not hidden.** If a write fails (storage full or blocked) the change is rolled back, the action shows an error and a banner explains why.
 - **Link previews are static.** Crawlers don't run JS, so every link (sheets and groups included) previews the homepage card. Per-sheet previews will need server-side rendering.
 - Paid plans aren't enforced, except the free 50-member cap on groups.
 - A recurring event's attached sheet gets slots for its next ~4 dates when created. It doesn't roll forward automatically (that's P1). Item-only sheets (e.g. Potluck) apply to every date cumulatively.

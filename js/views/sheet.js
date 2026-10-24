@@ -9,6 +9,16 @@ import * as store from '../store.js';
 export async function sheetView(root, { id }) {
   let sheet = await store.getSheet(id);
   if (!sheet) return notFound(root, "That sheet wandered off. Maybe it's at the hardware store.");
+  if (sheet.locked) {
+    // Sheet attached to a private group: only members (and organizers) can see it.
+    document.title = 'Private group sheet · SignMeUpDaddy';
+    root.innerHTML = html`<div class="container narrow center-page">
+      <p class="big-emoji" aria-hidden="true">🔒</p>
+      <h1 tabindex="-1">This sheet belongs to a private group.</h1>
+      <p class="lede">Join ${sheet.groupEmoji} ${sheet.groupName} to see who's bringing what and claim a slot.</p>
+      <a class="btn btn-primary" href="#/g/${sheet.groupId}">Go to the group</a></div>`.s;
+    return;
+  }
   document.title = `${sheet.title} · SignMeUpDaddy`;
   const isOwner = !!(await store.getAdminToken(id));
   const group = sheet.groupId ? await store.getGroup(sheet.groupId) : null;
@@ -30,7 +40,7 @@ export async function sheetView(root, { id }) {
       <div class="page-tools">
         ${group && !group.locked ? html`<a class="crumb" href="#/g/${group.id}">${icon('arrowL')} ${group.emoji} ${group.name}</a>` : html`<span></span>`}
         <div class="btn-row">
-          ${isOwner ? html`<a class="btn btn-ghost btn-sm" href="#/s/${sheet.id}/manage">${icon('chart')} Manage</a>` : ''}
+          ${isOwner ? html`<a class="btn btn-ghost btn-sm" href="#/s/${sheet.id}/edit">${icon('edit')} Edit</a><a class="btn btn-ghost btn-sm" href="#/s/${sheet.id}/manage">${icon('chart')} Manage</a>` : ''}
           <button type="button" class="btn btn-ghost btn-sm" data-share>${icon('share')} Share</button>
         </div>
       </div>
@@ -59,10 +69,10 @@ export async function sheetView(root, { id }) {
   // Live progress: re-render when the store changes (other tabs, or this one) and announce changes.
   const unsub = store.subscribe(async () => {
     const next = await store.getSheet(id);
-    if (!next) return;
+    if (!next || next.locked) return;
     sheet = next;
     const now = counts(sheet);
-    const changed = sheet.slots.find((s) => now[s.id] !== prev[s.id]);
+    const changed = sheet.slots.find((s) => !s.archived && now[s.id] !== prev[s.id]);
     prev = now;
     await render();
     if (changed) {

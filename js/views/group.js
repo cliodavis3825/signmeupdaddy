@@ -1,5 +1,5 @@
 // Group page (#/g/<id>) and event page (#/g/<id>/e/<eventId>[/<date>]).
-import { html, raw, fmtDate, fmtDateLong, fmtRange, timeAgo, shortName, download, slugify, toast } from '../util.js';
+import { html, raw, fmtDate, fmtDateLong, fmtRange, timeAgo, shortName, download, slugify, toast, copyText, firstName } from '../util.js';
 import { occurrences, nextOccurrence, rsvpsFor, isOccurrence, sheetProgressFor, slotStats, RECURRENCE_LABELS } from '../model.js';
 import { icon, noAdsBadge, confirmDialog, flash, progressBar } from '../components.js';
 import { googleCalendarUrl, buildIcs, groupEventFor } from '../calendar.js';
@@ -7,7 +7,7 @@ import { notFound } from './notfound.js';
 import { openSignupDialog } from './signup.js';
 import {
   avatar, roleBadge, dateChip, eventCard, rsvpControl, rsvpLine, sheetProgressBlock, handleRsvp, openJoinDialog,
-  openClaimPrompt, openNewEventDialog, openAttachSheetDialog, shareGroup, eventUrl,
+  openClaimPrompt, openNewEventDialog, openAttachSheetDialog, openEditEventDialog, shareGroup, eventUrl, memberUrl,
 } from './groupsShared.js';
 import * as store from '../store.js';
 
@@ -39,7 +39,17 @@ function cover(group, { compact = false } = {}) {
 
 /* =================== Group page =================== */
 
-export async function groupView(root, { id }) {
+export async function groupView(root, { id, memberToken }) {
+  if (memberToken) {
+    // Personal link: the token is the identity. Remember it in this browser, then drop it from the URL.
+    try {
+      const r = await store.useMemberLink(id, memberToken);
+      toast(`Welcome back, ${firstName(r.name)}! You're in, on this browser too.`);
+    } catch (ex) {
+      toast(ex.message);
+    }
+    history.replaceState(null, '', `#/g/${encodeURIComponent(id)}`);
+  }
   let group = await store.getGroup(id);
   if (!group) return notFound(root, "That group must be out on a hike. We can't find it.");
 
@@ -119,6 +129,15 @@ export async function groupView(root, { id }) {
             ${members.length > shown.length ? html`<p class="small muted">and ${members.length - shown.length} more</p>` : ''}
             ${v.member && v.member.role !== 'organizer' ? html`<button type="button" class="link-btn small" data-leave>Leave group</button>` : ''}
           </section>
+          ${v.member ? html`<section class="card" aria-labelledby="mylink-h">
+            <h2 id="mylink-h" class="h3">${icon('link')} Your personal link</h2>
+            <p class="small">It's how you get back into this group on another phone or browser. We'd normally email it to you. Keep it to yourself: whoever has it can act as you.</p>
+            <div class="input-row">
+              <label class="sr-only" for="my-link">Your personal link</label>
+              <input id="my-link" type="text" readonly value="${memberUrl(group.id, v.member.token)}">
+              <button type="button" class="btn btn-primary btn-sm" data-copy-mylink>${icon('copy')} Copy</button>
+            </div>
+          </section>` : ''}
           <section class="card" aria-labelledby="share-h">
             <h2 id="share-h" class="h3">Invite people</h2>
             <p class="small">Link, QR code and a ready-to-send group text.</p>
@@ -140,12 +159,17 @@ export async function groupView(root, { id }) {
     const t = e.target.closest('button');
     if (!t) return;
     if (t.hasAttribute('data-share')) return shareGroup(group);
+    if (t.hasAttribute('data-copy-mylink')) {
+      const ok = await copyText(memberUrl(group.id, group.viewer.member?.token || ''));
+      return toast(ok ? 'Personal link copied. Stash it somewhere safe!' : 'Copy failed. Select the link and copy it manually.');
+    }
     if (t.hasAttribute('data-join')) {
       return openJoinDialog(group, {
+        intro: 'Just your name and email. No account, no password, no ads. Already a member? Open your personal link instead.',
         onSubmit: async (input) => {
           const r = await store.joinGroup(id, input);
           await render();
-          toast(r.welcomeBack ? 'Welcome back! You were already a member.' : `Welcome to ${group.name}!`);
+          toast(r.already ? "You're already a member." : `Welcome to ${group.name}! Your personal link is in the sidebar.`);
         },
       });
     }
@@ -159,10 +183,14 @@ export async function groupView(root, { id }) {
       if (ev) return openClaimPrompt(group, ev, t.dataset.occ, { heading: 'Claim a slot', onChange: render });
     }
     if (t.hasAttribute('data-new-event')) return openNewEventDialog(group, group.viewer.auth, { onCreated: render });
-    if (t.dataset.pin) { await store.togglePin(id, group.viewer.auth, t.dataset.pin); await render(); return; }
+    if (t.dataset.pin) {
+      try { await store.togglePin(id, group.viewer.auth, t.dataset.pin); } catch (ex) { toast(ex.message); }
+      await render(); return;
+    }
     if (t.dataset.delPost) {
       if (await confirmDialog({ title: 'Delete this post?', message: "It'll disappear for everyone.", confirmLabel: 'Delete', danger: true })) {
-        await store.deleteAnnouncement(id, group.viewer.auth, t.dataset.delPost); await render();
+        try { await store.deleteAnnouncement(id, group.viewer.auth, t.dataset.delPost); } catch (ex) { toast(ex.message); }
+        await render();
       }
       return;
     }
@@ -228,6 +256,7 @@ export async function eventView(root, { id, eventId, date }) {
             ${ev.location ? html`<span>${icon('pin')}${ev.location}</span>` : ''}
           </p>
           ${ev.description ? html`<p class="pre-line">${ev.description}</p>` : ''}
+          ${v.canManage ? html`<button type="button" class="btn btn-ghost btn-sm" data-edit-event>${icon('edit')} Edit event</button>` : ''}
         </div>
       </header>
 
@@ -312,16 +341,21 @@ export async function eventView(root, { id, eventId, date }) {
       return toast(series ? 'Series calendar file downloaded.' : 'Calendar file downloaded.');
     }
     if (t.hasAttribute('data-attach')) return openAttachSheetDialog(group, group.viewer.auth, ev, { onDone: render });
+    if (t.hasAttribute('data-edit-event')) return openEditEventDialog(group, group.viewer.auth, ev, { onSaved: render });
     if (t.dataset.detach) {
-      await store.detachSheet(id, group.viewer.auth, ev.id, t.dataset.detach);
-      toast('Sheet detached.');
+      try {
+        await store.detachSheet(id, group.viewer.auth, ev.id, t.dataset.detach);
+        toast('Sheet detached.');
+      } catch (ex) { toast(ex.message); }
       return render();
     }
     if (t.hasAttribute('data-del-event')) {
       if (await confirmDialog({ title: 'Delete this event?', message: `"${ev.title}" and its RSVPs will be removed for everyone.`, confirmLabel: 'Delete event', danger: true })) {
-        await store.deleteEvent(id, group.viewer.auth, ev.id);
-        toast('Event deleted.');
-        location.hash = `#/g/${id}`;
+        try {
+          await store.deleteEvent(id, group.viewer.auth, ev.id);
+          toast('Event deleted.');
+          location.hash = `#/g/${id}`;
+        } catch (ex) { toast(ex.message); }
       }
     }
   });

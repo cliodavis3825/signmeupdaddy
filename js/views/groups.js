@@ -1,9 +1,9 @@
 // Groups home (#/groups) and the 3-step group builder (#/groups/new, #/groups/new/from/<sheetId>).
-import { html, raw, isEmail, isoDate, nextDow, fmtDate, fmtRange, toast } from '../util.js';
+import { html, raw, isEmail, isoDate, nextDow, fmtDate, fmtRange, toast, parseCount } from '../util.js';
 import { nextOccurrence, RECURRENCE_LABELS } from '../model.js';
 import { icon, flash, confirmDialog } from '../components.js';
 import { getTemplate } from '../templates.js';
-import { avatar, pricingSection, sheetChoiceSelect, applySheetChoice } from './groupsShared.js';
+import { avatar, pricingSection, sheetChoiceSelect, applySheetChoice, monthlyHint } from './groupsShared.js';
 import * as store from '../store.js';
 
 const EMOJIS = ['🏕️', '🥾', '📚', '🏃', '🚴', '🎲', '🧶', '🍳', '⚽', '🎸', '🌱', '🧘', '🐕', '🎣', '🛶', '⛪', '👶', '🍻', '☕', '🎮'];
@@ -33,8 +33,8 @@ export async function groupsHomeView(root) {
           <div class="mini-group-body">
             <p class="mini-title">Saturday Trail Dads</p>
             <div class="mini-event"><span class="date-chip sm"><span class="dc-mon">Sat</span><span class="dc-day">7:30</span></span>
-              <div><p><strong>Saturday morning hike</strong></p><p class="small">7 going · 3 spots left</p>
-              <div class="bar"><span style="width:70%"></span></div>
+              <div><p><strong>Saturday morning hike</strong></p><p class="small">6 going · 4 spots left</p>
+              <div class="bar"><span style="width:60%"></span></div>
               <p class="small mini-sheet">🥨 <strong>3/4</strong> snacks claimed</p></div></div>
             <div class="mini-rsvp"><span class="rsvp-btn" aria-pressed="true">${icon('check')}Going</span><span class="rsvp-btn">Maybe</span><span class="rsvp-btn">Can't</span></div>
           </div>
@@ -116,7 +116,10 @@ function validate(step) {
   if (step === 2 && draft.addEvent) {
     if (!draft.event.title.trim()) e.push({ id: 'g-ev-title', msg: 'Name your first event.' });
     if (!draft.event.date) e.push({ id: 'g-ev-date', msg: 'Pick a date.' });
+    else if (draft.event.recurrence === 'none' && draft.event.date < store.todayIso()) e.push({ id: 'g-ev-date', msg: 'That date has already passed. Pick an upcoming date.' });
     if (draft.event.start && draft.event.end && draft.event.end <= draft.event.start) e.push({ id: 'g-ev-end', msg: 'End time should be after start.' });
+    const cap = draft.event.capacityBad ? NaN : parseCount(draft.event.capacity);
+    if (!(cap >= 0 && cap <= 9999)) e.push({ id: 'g-ev-cap', msg: 'Spots should be a whole number from 0 (no limit) to 9999.' });
   }
   return e;
 }
@@ -191,8 +194,9 @@ export async function groupBuilderView(root, params) {
         <div class="field"><label for="g-ev-end">Ends</label><input id="g-ev-end" data-p="event.end" type="time" value="${draft.event.end}" ${inv('g-ev-end')}></div>
       </div>
       <div class="field-row">
-        <div class="field"><label for="g-ev-rec">Repeats</label><select id="g-ev-rec" data-p="event.recurrence">${Object.entries(RECURRENCE_LABELS).map(([k, v]) => html`<option value="${k}" ${k === draft.event.recurrence ? raw('selected') : ''}>${v}</option>`)}</select></div>
-        <div class="field"><label for="g-ev-cap">Spots <span class="muted">(0 = no limit)</span></label><input id="g-ev-cap" data-p="event.capacity" type="number" min="0" max="9999" inputmode="numeric" value="${draft.event.capacity}"></div>
+        <div class="field"><label for="g-ev-rec">Repeats</label><select id="g-ev-rec" data-p="event.recurrence">${Object.entries(RECURRENCE_LABELS).map(([k, v]) => html`<option value="${k}" ${k === draft.event.recurrence ? raw('selected') : ''}>${v}</option>`)}</select>
+          <p class="hint" id="g-ev-rec-hint" aria-live="polite">${monthlyHint(draft.event.date, draft.event.recurrence)}</p></div>
+        <div class="field"><label for="g-ev-cap">Spots <span class="muted">(0 = no limit)</span></label><input id="g-ev-cap" data-p="event.capacity" type="number" min="0" max="9999" step="1" inputmode="numeric" value="${draft.event.capacity}" ${inv('g-ev-cap')}></div>
       </div>
       <div class="field"><label for="g-ev-loc">Location <span class="muted">(defaults to the group's)</span></label><input id="g-ev-loc" data-p="event.location" type="text" maxlength="200" value="${draft.event.location}" placeholder="${draft.location}"></div>
       <div class="field highlight-field"><label for="g-ev-sheet">${icon('list')} Attach a sign-up sheet <span class="muted">(who's bringing what)</span></label>
@@ -240,12 +244,17 @@ export async function groupBuilderView(root, params) {
     if (el.id === 'g-ev-sheet') { draft.sheetChoice = el.value; pv.innerHTML = coverPreview().s; return; }
     const p = el.dataset.p;
     if (!p) return;
-    let v = el.type === 'checkbox' ? el.checked : el.value;
-    if (p === 'event.capacity') v = el.value.replace(/\D/g, '');
+    const v = el.type === 'checkbox' ? el.checked : el.value;
+    if (p === 'event.capacity') draft.event.capacityBad = !!el.validity?.badInput; // e.g. "1e": reported as ""
     const parts = p.split('.');
     if (parts.length === 2) draft[parts[0]][parts[1]] = v; else draft[p] = v;
     el.removeAttribute('aria-invalid');
     if (p === 'addEvent' || (p === 'event.recurrence' && e.type === 'change')) { render(); form.querySelector(`[data-p="${p}"]`)?.focus(); return; }
+    if (p === 'event.date') {
+      const hint = form.querySelector('#g-ev-rec-hint');
+      const text = monthlyHint(draft.event.date, draft.event.recurrence);
+      if (hint && hint.textContent !== text) hint.textContent = text;
+    }
     pv.innerHTML = coverPreview().s;
   };
   form.addEventListener('input', onInput);

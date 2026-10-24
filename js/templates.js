@@ -114,4 +114,5 @@ export const TEMPLATES = [
   },
 ];
 
+export const findTemplate = (id) => TEMPLATES.find((t) => t.id === id) || null;
 export const getTemplate = (id) => TEMPLATES.find((t) => t.id === id) || TEMPLATES[0];

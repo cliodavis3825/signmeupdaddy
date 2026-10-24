@@ -1,14 +1,16 @@
 // Shared Groups UI: avatars, event cards, RSVP + "claim a slot" flow, join dialog,
 // event creation / sheet attachment dialogs, pricing section.
-import { html, raw, parseDate, fmtDate, fmtDateLong, fmtRange, firstName, isEmail, toast, shortName } from '../util.js';
-import { occurrences, nextOccurrence, rsvpsFor, sheetProgressFor, slotStats, RECURRENCE_LABELS } from '../model.js';
-import { icon, openDialog, progressBar, openShareLinkDialog } from '../components.js';
+import { html, raw, parseDate, fmtDate, fmtDateLong, fmtRange, firstName, isEmail, toast, shortName, parseCount } from '../util.js';
+import { occurrences, nextOccurrence, rsvpsFor, sheetProgressFor, slotStats, eventEditImpact, RECURRENCE_LABELS } from '../model.js';
+import { icon, openDialog, progressBar, openShareLinkDialog, confirmDialog } from '../components.js';
 import { TEMPLATES, getTemplate, timeSlot } from '../templates.js';
 import { calendarAndLink, wireCalendarAndLink } from './participant.js';
 import { openSignupDialog } from './signup.js';
 import * as store from '../store.js';
 
 export const groupUrl = (id) => `${location.origin}${location.pathname}#/g/${encodeURIComponent(id)}`;
+// Personal link: the member's token is their identity (stand-in for an emailed magic link).
+export const memberUrl = (gid, token) => `${location.origin}${location.pathname}#/g/${encodeURIComponent(gid)}/me/${encodeURIComponent(token)}`;
 export const eventUrl = (gid, eid, occ) => `${location.origin}${location.pathname}#/g/${encodeURIComponent(gid)}/e/${encodeURIComponent(eid)}${occ ? `/${occ}` : ''}`;
 
 /* ---------- Small pieces ---------- */
@@ -57,7 +59,7 @@ export function rsvpControl(group, ev, occ) {
 export function rsvpLine(group, ev, occ) {
   const r = rsvpsFor(group, ev.id, occ);
   const bits = [html`<strong>${r.going.length} going</strong>`];
-  if (ev.capacity) bits.push(r.going.length >= ev.capacity ? html`<span class="text-green">full</span>` : `${ev.capacity - r.going.length} spots left`);
+  if (ev.capacity) bits.push(r.going.length >= ev.capacity ? html`<span class="text-green">full</span>` : `${ev.capacity - r.going.length} ${ev.capacity - r.going.length === 1 ? 'spot' : 'spots'} left`);
   if (r.maybe.length) bits.push(`${r.maybe.length} maybe`);
   if (r.waitlist.length) bits.push(`${r.waitlist.length} on waitlist`);
   return html`<p class="rsvp-line small">${bits.map((b, i) => html`${i ? ' · ' : ''}${b}`)}</p>
@@ -125,6 +127,7 @@ export function openJoinDialog(group, { title, intro, submitLabel = 'Join the gr
         const btn = form.querySelector('button[type=submit]');
         btn.disabled = true;
         err.hidden = true;
+        form.querySelectorAll('[aria-invalid]').forEach((el) => el.removeAttribute('aria-invalid'));
         try {
           const after = await onSubmit(input);
           store.setMe(input);
@@ -132,12 +135,20 @@ export function openJoinDialog(group, { title, intro, submitLabel = 'Join the gr
           if (typeof after === 'function') after();
         } catch (ex) {
           btn.disabled = false;
-          err.textContent = ex.message || 'Something went wrong.';
-          err.hidden = false;
+          showFormError(form, ex);
         }
       });
     },
   });
+}
+
+// Show a store error in the form's error box and mark/focus the field it's about (if any).
+export function showFormError(form, ex) {
+  const err = form.querySelector('.form-error');
+  err.textContent = ex.message || 'Something went wrong.';
+  err.hidden = false;
+  const field = ex.field && form.querySelector(`[name="${ex.field}"]`);
+  if (field) { field.setAttribute('aria-invalid', 'true'); field.focus(); }
 }
 
 /* ---------- Claim-a-slot prompt (the headline flow) ---------- */
@@ -228,6 +239,7 @@ export async function openClaimPrompt(group, ev, occ, { heading, intro, onChange
 export async function handleRsvp(group, ev, occ, status, rerender) {
   const run = async (input) => {
     const res = await store.rsvp(group.id, ev.id, occ, status, input);
+    if (input) toast(`Welcome to ${group.name}! Your personal link is in the group's sidebar.`);
     const fresh = await store.getGroup(group.id);
     await rerender?.();
     // Follow-ups run after any join dialog has closed, so focus lands in the right place.
@@ -290,9 +302,12 @@ export function buildEventSheet(templateId, ev, organizerName) {
   } else {
     const uniq = [];
     for (const s of t.slots) if (s.type === 'time' && !uniq.some((u) => u.label === s.label)) uniq.push(s);
+    // Templates whose slots have their own, different times (volunteer shifts, carpool drop-off vs pickup)
+    // keep them; a single slot per date (snacks, meals) takes the event's time.
+    const ownTimes = new Set(uniq.map((u) => `${u.start}-${u.end}`)).size > 1;
     slots = occs.flatMap((d) => uniq.map((u) => timeSlot({
       label: templateId === 'snacks' ? 'Snacks' : u.label, note: u.note, capacity: u.capacity, date: d,
-      start: templateId === 'volunteer' ? u.start : (ev.start || u.start), end: templateId === 'volunteer' ? u.end : (ev.end || u.end),
+      start: ownTimes ? u.start : (ev.start || u.start), end: ownTimes ? u.end : (ev.end || u.end),
     })));
   }
   return {
@@ -314,10 +329,11 @@ export async function applySheetChoice(group, auth, ev, choice) {
   if (choice.startsWith('tpl:')) {
     const organizer = group.viewer?.member?.name || group.members.find((m) => m.role === 'organizer')?.name || group.name;
     const draft = { ...buildEventSheet(choice.slice(4), ev, organizer), groupId: group.id, eventId: ev.id };
-    const { id } = await store.createSheet(draft);
-    await store.attachSheet(group.id, auth, ev.id, id);
+    const { id, adminToken } = await store.createSheet(draft);
+    await store.attachSheet(group.id, auth, ev.id, id, adminToken);
   } else if (choice.startsWith('sheet:')) {
-    await store.attachSheet(group.id, auth, ev.id, choice.slice(6));
+    const sid = choice.slice(6);
+    await store.attachSheet(group.id, auth, ev.id, sid, await store.getAdminToken(sid));
   }
 }
 
@@ -335,7 +351,8 @@ export function eventFields(prefix, ev = {}) {
       <div class="field"><label for="${prefix}-rec">Repeats</label>
         <select id="${prefix}-rec" name="recurrence">
           ${Object.entries(RECURRENCE_LABELS).map(([k, v]) => html`<option value="${k}" ${k === rec ? raw('selected') : ''}>${v}</option>`)}
-        </select></div>
+        </select>
+        <p class="hint" id="${prefix}-rec-hint" aria-live="polite">${monthlyHint(ev.date, rec)}</p></div>
       <div class="field"><label for="${prefix}-cap">Spots <span class="muted">(0 = no limit)</span></label>
         <input id="${prefix}-cap" name="capacity" type="number" min="0" max="9999" inputmode="numeric" value="${ev.capacity ?? 0}" aria-describedby="${prefix}-cap-hint">
         <p class="hint" id="${prefix}-cap-hint">When it's full, a free waitlist kicks in.</p></div>
@@ -346,10 +363,34 @@ export function eventFields(prefix, ev = {}) {
       <textarea id="${prefix}-desc" name="description" rows="2" maxlength="1000">${ev.description || ''}</textarea></div>`;
 }
 
+// "Every month" on the 29th-31st skips shorter months (calendar apps do the same), so say so up front.
+export function monthlyHint(date, rec) {
+  const d = parseDate(date);
+  if (rec !== 'monthly' || !d || d.getDate() <= 28) return '';
+  const n = d.getDate();
+  return `Heads up: months without a ${n}${n === 31 ? 'st' : 'th'} are skipped${n === 31 ? ' (e.g. Nov, Feb, Apr)' : ' (February)'}. Calendar apps do the same.`;
+}
+// Keep the monthly hint and the "Date"/"First date" label in sync while the organizer edits.
+export function wireEventFields(form, prefix) {
+  const update = () => {
+    const date = form.querySelector(`#${prefix}-date`)?.value;
+    const rec = form.querySelector(`#${prefix}-rec`)?.value;
+    const hint = form.querySelector(`#${prefix}-rec-hint`);
+    const text = monthlyHint(date, rec);
+    if (hint && hint.textContent !== text) hint.textContent = text;
+    const lbl = form.querySelector(`label[for="${prefix}-date"]`);
+    if (lbl) lbl.textContent = rec === 'none' ? 'Date' : 'First date';
+  };
+  form.addEventListener('change', update);
+  form.addEventListener('input', (e) => { e.target.removeAttribute?.('aria-invalid'); update(); });
+}
+
 export const readEventForm = (form) => {
   const fd = new FormData(form);
   const o = {};
   for (const k of ['title', 'date', 'start', 'end', 'recurrence', 'capacity', 'location', 'description']) o[k] = String(fd.get(k) ?? '');
+  // A number field holding something unparseable (e.g. "1e") reports "" - don't let that pass as a value.
+  if (form.querySelector('[name="capacity"]')?.validity?.badInput) o.capacity = 'invalid';
   return o;
 };
 
@@ -372,9 +413,11 @@ export async function openNewEventDialog(group, auth, { onCreated } = {}) {
       const form = dlg.querySelector('form');
       dlg.querySelector('#ne-title').focus();
       const err = dlg.querySelector('.form-error');
+      wireEventFields(form, 'ne');
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         err.hidden = true;
+        form.querySelectorAll('[aria-invalid]').forEach((el) => el.removeAttribute('aria-invalid'));
         try {
           const data = readEventForm(form);
           const { eventId } = await store.createEvent(group.id, auth, data);
@@ -385,8 +428,61 @@ export async function openNewEventDialog(group, auth, { onCreated } = {}) {
           toast('Event created!');
           onCreated?.(eventId);
         } catch (ex) {
-          err.textContent = ex.message;
-          err.hidden = false;
+          showFormError(form, ex);
+        }
+      });
+    },
+  });
+}
+
+// Edit an event after publishing. RSVPs are never deleted; anything that affects people is confirmed first.
+export function openEditEventDialog(group, auth, ev, { onSaved } = {}) {
+  let initial = '';
+  let form = null;
+  openDialog({
+    // Don't lose edits to Esc, Cancel or a stray backdrop click.
+    async beforeClose() {
+      if (!form || JSON.stringify(readEventForm(form)) === initial) return true;
+      return confirmDialog({ title: 'Discard your changes?', message: "Your edits to this event haven't been saved.", confirmLabel: 'Discard changes', danger: true });
+    },
+    title: `Edit event: ${ev.title}`,
+    className: 'dialog-wide',
+    body: html`<form novalidate>
+      <div class="form-error" role="alert" hidden></div>
+      ${eventFields('ee', ev)}
+      <p class="small muted">Everyone keeps their RSVP. If you add spots, people on the waitlist move in automatically.</p>
+      <div class="dialog-actions"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button type="submit" class="btn btn-primary">${icon('check')} Save changes</button></div>
+    </form>`,
+    onMount(dlg) {
+      form = dlg.querySelector('form');
+      initial = JSON.stringify(readEventForm(form));
+      dlg.querySelector('#ee-title').focus();
+      wireEventFields(form, 'ee');
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        form.querySelector('.form-error').hidden = true;
+        form.querySelectorAll('[aria-invalid]').forEach((el) => el.removeAttribute('aria-invalid'));
+        const data = readEventForm(form);
+        try {
+          const cap = parseCount(data.capacity);
+          if (parseDate(data.date) && cap >= 0) {
+            const admin = await store.getGroupAdmin(group.id, auth);
+            const cur = admin.events.find((x) => x.id === ev.id) || ev;
+            const next = { ...cur, date: data.date, recurrence: data.recurrence, capacity: cap };
+            const impact = eventEditImpact(admin, cur, next);
+            const details = [];
+            if (impact.orphaned) details.push(`${impact.orphaned} upcoming RSVP${impact.orphaned === 1 ? ' is' : 's are'} on dates that won't be part of this event any more. They're kept, not deleted, and come back if you change the dates back. (The real app would email those people.)`);
+            for (const x of impact.shrunk) details.push(`${fmtDate(x.date)}: ${x.going} ${x.going === 1 ? 'person is' : 'people are'} going but you set ${cap} ${cap === 1 ? 'spot' : 'spots'}. Nobody loses their spot; new RSVPs join the waitlist.`);
+            if (impact.sheetsAffected) details.push('Attached sign-up sheets keep their current slot dates. Edit the sheet if its slots should move too.');
+            if (details.length && !(await confirmDialog({ title: 'Save these changes?', message: 'A few things to know first:', details, confirmLabel: 'Save changes' }))) return;
+          }
+          const res = await store.updateEvent(group.id, auth, ev.id, data);
+          dlg.close();
+          toast('Event updated.');
+          if (res.promoted) toast(`${res.promoted} ${res.promoted === 1 ? 'person' : 'people'} moved up from the waitlist.`);
+          onSaved?.();
+        } catch (ex) {
+          showFormError(form, ex);
         }
       });
     },
@@ -416,9 +512,7 @@ export async function openAttachSheetDialog(group, auth, ev, { onDone } = {}) {
           toast('Sheet attached. People can claim slots when they RSVP.');
           onDone?.();
         } catch (ex) {
-          const err = dlg.querySelector('.form-error');
-          err.textContent = ex.message;
-          err.hidden = false;
+          showFormError(form, ex);
         }
       });
     },
@@ -468,7 +562,7 @@ export function pricingSection(idSuffix = '') {
         </li>
       </ul>
       <div class="promise-strip">${icon('shield')}<p><strong>Our promise:</strong> no ads, no surprise price hikes, and at least <strong>90 days' notice</strong> before any price change. In writing. Dad's honor.</p></div>
-      <p class="muted small">Prototype: plans aren't enforced except the free 50-member cap. Prices are proposals, October 2026.</p>
+      <p class="muted small">Prototype: plans aren't enforced except the free 50-member cap, so every group can try Group Plus features like co-organizers. Prices are proposals, October 2026.</p>
     </div>
   </section>`;
 }

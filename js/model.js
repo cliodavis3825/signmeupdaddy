@@ -1,4 +1,4 @@
-import { parseDate, addDays, isoDate, today } from './util.js';
+import { parseDate, addDays, isoDate, today, contactKey } from './util.js';
 
 // Pure helpers over the sheet data shape. No storage, no DOM.
 //
@@ -8,10 +8,14 @@ import { parseDate, addDays, isoDate, today } from './util.js';
 //   date, start, end,            // event date/time (used by item slots + calendar)
 //   waitlist: boolean,
 //   organizer: { name, email? },
-//   slots: [{ id, type: 'time'|'item', label, note, capacity, date?, start?, end? }],
+//   slots: [{ id, type: 'time'|'item', label, note, capacity, date?, start?, end?, archived? }],
+//          (archived = removed by the organizer while it still had signups; hidden, signups kept)
 //   signups: [{ id, slotId, name, contact?, note, status: 'confirmed'|'waitlist', createdAt, queuedAt, token? }],
 //   createdAt
 // }
+
+// Slots people can see and sign up for (removed-with-signups slots are archived, not deleted).
+export const activeSlots = (sheet) => sheet.slots.filter((s) => !s.archived);
 
 export const confirmedFor = (sheet, slotId) =>
   sheet.signups.filter((s) => s.slotId === slotId && s.status === 'confirmed')
@@ -30,22 +34,26 @@ export function slotStats(sheet, slot) {
 
 export function sheetTotals(sheet) {
   let filled = 0, capacity = 0, waiting = 0;
-  for (const slot of sheet.slots) {
+  const active = new Set();
+  for (const slot of activeSlots(sheet)) {
+    active.add(slot.id);
     const s = slotStats(sheet, slot);
     filled += Math.min(s.filled, s.capacity);
     capacity += s.capacity;
     waiting += s.waiting;
   }
-  const people = new Set(sheet.signups.filter((s) => s.status === 'confirmed').map((s) => (s.contact || s.name).toLowerCase())).size;
+  const people = new Set(sheet.signups.filter((s) => s.status === 'confirmed' && active.has(s.slotId))
+    .map((s) => contactKey(s.contact) || String(s.name || '').toLowerCase())).size;
   return { filled, capacity, waiting, open: capacity - filled, people };
 }
 
 // Groups slots for display: item slots first ("What to bring"), then time slots by date.
 export function groupSlots(sheet) {
   const groups = [];
-  const items = sheet.slots.filter((s) => s.type === 'item');
+  const all = activeSlots(sheet);
+  const items = all.filter((s) => s.type === 'item');
   if (items.length) groups.push({ key: 'items', kind: 'items', date: sheet.date || '', slots: items });
-  const times = sheet.slots.filter((s) => s.type === 'time')
+  const times = all.filter((s) => s.type === 'time')
     .slice()
     .sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999') || (a.start || '').localeCompare(b.start || ''));
   for (const slot of times) {
@@ -108,10 +116,11 @@ export function rsvpsFor(group, eventId, occurrence) {
 
 // Slots of a sheet relevant to one occurrence: time slots dated that day if any exist, else all slots.
 export function slotsForOccurrence(sheet, date) {
-  const dated = sheet.slots.filter((s) => s.type === 'time' && s.date === date);
+  const all = activeSlots(sheet);
+  const dated = all.filter((s) => s.type === 'time' && s.date === date);
   if (dated.length) return dated;
   // Item slots (and undated time slots) apply to every occurrence; otherwise nothing is due that day.
-  return sheet.slots.filter((s) => s.type === 'item' || !s.date);
+  return all.filter((s) => s.type === 'item' || !s.date);
 }
 
 export function sheetProgressFor(sheet, date) {
@@ -123,4 +132,43 @@ export function sheetProgressFor(sheet, date) {
     capacity += st.capacity;
   }
   return { filled, capacity, open: capacity - filled, slots };
+}
+
+/* ---------- Edit-after-publish impact (used to warn before saving) ---------- */
+
+// What an edit to a sheet's slots does to people already signed up. `nextSlots` is the edited slot list.
+export function sheetEditImpact(sheet, nextSlots, { waitlist = sheet.waitlist } = {}) {
+  const byId = new Map(nextSlots.map((s) => [s.id, s]));
+  const removed = [], shrunk = [], moved = [];
+  // Turning the waitlist off doesn't remove anyone who is already queued.
+  const queued = waitlist === false && sheet.waitlist !== false
+    ? sheet.signups.filter((x) => x.status === 'waitlist' && byId.has(x.slotId)).length : 0;
+  for (const old of activeSlots(sheet)) {
+    const conf = confirmedFor(sheet, old.id).length;
+    const wait = waitlistFor(sheet, old.id).length;
+    const total = conf + wait;
+    const next = byId.get(old.id);
+    if (!next) { if (total) removed.push({ label: old.label, count: total }); continue; }
+    const cap = Number(next.capacity);
+    if (Number.isFinite(cap) && cap < conf) shrunk.push({ label: next.label || old.label, count: conf, capacity: cap });
+    const when = (s) => (s.type === 'time' ? `${s.date || ''} ${s.start || ''} ${s.end || ''}` : '');
+    if (total && old.type === 'time' && when(old) !== when(next)) moved.push({ label: next.label || old.label, count: total });
+  }
+  return { removed, shrunk, moved, queued };
+}
+
+// What an edit to a group event does to existing RSVPs (upcoming dates only).
+export function eventEditImpact(group, ev, next, { from = isoDate(today()) } = {}) {
+  const mine = group.rsvps.filter((r) => r.eventId === ev.id && r.occurrence >= from && r.status !== 'no');
+  const orphaned = mine.filter((r) => !isOccurrence(next, r.occurrence)).length;
+  const shrunk = [];
+  if (next.capacity) {
+    const dates = [...new Set(mine.map((r) => r.occurrence))].filter((d) => isOccurrence(next, d)).sort();
+    for (const d of dates) {
+      const going = rsvpsFor(group, ev.id, d).going.length;
+      if (going > next.capacity) shrunk.push({ date: d, going });
+    }
+  }
+  const datesChanged = ev.date !== next.date || ev.recurrence !== next.recurrence;
+  return { orphaned, shrunk, sheetsAffected: datesChanged && (ev.sheetIds || []).length > 0 };
 }

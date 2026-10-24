@@ -1,6 +1,6 @@
 // App shell: hash router, theme toggle, focus management.
 import * as store from './store.js';
-import { icon, logoMark } from './components.js';
+import { icon, logoMark, leaveGuard, confirmDialog } from './components.js';
 import { html, readLocal, writeLocal, randomJoke } from './util.js';
 import { landingView } from './views/landing.js';
 import { builderView } from './views/builder.js';
@@ -19,12 +19,14 @@ const ROUTES = [
   [/^\/new\/([\w-]+)$/, () => builderView, (m) => ({ template: m[1] }), 'new'],
   [/^\/s\/([\w-]+)$/, () => sheetView, (m) => ({ id: m[1] })],
   [/^\/s\/([\w-]+)\/manage$/, () => manageView, (m) => ({ id: m[1] }), 'mine'],
+  [/^\/s\/([\w-]+)\/edit$/, () => builderView, (m) => ({ editId: m[1] }), 'mine'],
   [/^\/done\/([\w-]+)$/, () => doneView, (m) => ({ token: m[1] })],
   [/^\/edit\/([\w-]+)$/, () => editView, (m) => ({ token: m[1] })],
   [/^\/groups$/, () => groupsHomeView, () => ({}), 'groups'],
   [/^\/groups\/new$/, () => groupBuilderView, () => ({}), 'groups'],
   [/^\/groups\/new\/from\/([\w-]+)$/, () => groupBuilderView, (m) => ({ fromSheet: m[1] }), 'groups'],
   [/^\/g\/([\w-]+)$/, () => groupView, (m) => ({ id: m[1] }), 'groups'],
+  [/^\/g\/([\w-]+)\/me\/([\w-]+)$/, () => groupView, (m) => ({ id: m[1], memberToken: m[2] }), 'groups'],
   [/^\/g\/([\w-]+)\/manage$/, () => groupManageView, (m) => ({ id: m[1] }), 'groups'],
   [/^\/g\/([\w-]+)\/e\/([\w-]+)(?:\/(\d{4}-\d{2}-\d{2}))?$/, () => eventView, (m) => ({ id: m[1], eventId: m[2], date: m[3] || '' }), 'groups'],
 ];
@@ -44,6 +46,17 @@ function currentPath() {
 async function route() {
   const path = currentPath();
   if (path === null) return; // in-page anchors (none expected)
+  // Unsaved edits: stay on the page and ask before leaving it.
+  if (leaveGuard.path && path !== leaveGuard.path && leaveGuard.active()) {
+    const target = location.hash;
+    history.replaceState(null, '', `#${leaveGuard.path}`);
+    const ok = await confirmDialog({ title: 'Leave without saving?', message: leaveGuard.message || "Your changes haven't been saved.", confirmLabel: 'Leave without saving', danger: true });
+    if (!ok) return;
+    leaveGuard.path = null;
+    location.hash = target;
+    return;
+  }
+  if (path !== leaveGuard.path) leaveGuard.path = null;
   const token = ++navToken;
   if (typeof cleanup === 'function') { try { cleanup(); } catch { /* ignore */ } }
   cleanup = null;
@@ -116,11 +129,33 @@ function initChrome() {
     const main = document.getElementById('app');
     main.focus();
   });
-  if (!store.isPersistent()) {
-    const b = document.getElementById('storage-banner');
-    if (b) b.hidden = false;
-  }
+  document.getElementById('storage-dismiss')?.addEventListener('click', () => {
+    document.getElementById('storage-banner').hidden = true;
+  });
+  showStorageStatus(store.storageStatus());
+  window.addEventListener('smud:storage', (e) => showStorageStatus(e.detail));
 }
+
+/* ---------- Storage problems: always visible, never silent ---------- */
+const STORAGE_MESSAGES = {
+  memory: "Heads up: your browser is blocking storage, so changes won't survive a refresh.",
+  quota: "Heads up: we couldn't save your last change because this browser's storage is full or blocked. Nothing was changed.",
+  recovered: (k) => `We couldn't read the data saved in this browser, so we started fresh with the demo. A copy of the old data was kept in local storage under "${k}".`,
+  'recovered-memory': "We couldn't read the data saved in this browser. To avoid wiping it, nothing you do this visit will be saved.",
+};
+function showStorageStatus({ mode, backupKey }) {
+  const b = document.getElementById('storage-banner');
+  const t = document.getElementById('storage-text');
+  if (!b || !t) return;
+  const msg = STORAGE_MESSAGES[mode];
+  if (!msg) { b.hidden = true; return; }
+  t.textContent = typeof msg === 'function' ? msg(backupKey) : msg;
+  b.hidden = false;
+}
+
+window.addEventListener('beforeunload', (e) => {
+  if (leaveGuard.path && currentPath() === leaveGuard.path && leaveGuard.active()) { e.preventDefault(); e.returnValue = ''; }
+});
 
 store.init();
 initChrome();

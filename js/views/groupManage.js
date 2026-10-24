@@ -1,6 +1,6 @@
 // Group organizer view: #/g/<id>/manage
 import { html, fmtDate, fmtRange, timeAgo, download, slugify, toast, isEmail } from '../util.js';
-import { occurrences, rsvpsFor, sheetProgressFor, RECURRENCE_LABELS } from '../model.js';
+import { occurrences, rsvpsFor, sheetProgressFor, isOccurrence, RECURRENCE_LABELS } from '../model.js';
 import { icon, confirmDialog, progressBar } from '../components.js';
 import { notFound } from './notfound.js';
 import { avatar, roleBadge, openNewEventDialog, shareGroup } from './groupsShared.js';
@@ -10,24 +10,35 @@ import * as store from '../store.js';
 export async function groupManageView(root, { id }) {
   const pub = await store.getGroup(id);
   if (!pub) return notFound(root);
-  const auth = pub.viewer.auth;
-  if (!pub.viewer.canManage || !auth) {
+  const lockPage = () => {
     document.title = 'Organizers only · SignMeUpDaddy';
     root.innerHTML = html`<div class="container narrow center-page">
       <p class="big-emoji" aria-hidden="true">🔒</p>
       <h1 tabindex="-1">Organizers only.</h1>
       <p class="lede">This view is for the organizer and co-organizers of ${pub.name}. In this prototype, access lives in the browser that created the group (or a co-organizer's browser).</p>
       <a class="btn btn-primary" href="#/g/${id}">Back to the group</a></div>`.s;
-    return;
-  }
+  };
+  // Credentials are re-read on every render and action: a demotion, removal or token rotation applies at once.
+  let auth = null;
+  const refreshAuth = async () => {
+    const v = (await store.getGroup(id))?.viewer;
+    auth = v?.canManage ? v.auth : null;
+    return v;
+  };
+  if (!(await refreshAuth()) || !auth) { lockPage(); return; }
 
   const render = async () => {
+    const v = await refreshAuth();
+    if (!auth) { lockPage(); return null; }
     const g = await store.getGroupAdmin(id, auth);
-    const viewerId = (await store.getGroup(id)).viewer.member?.id;
+    const viewerId = v.member?.id;
+    const isOrganizer = v.isAdmin || v.member?.role === 'organizer';
     document.title = `Organize: ${g.name} · SignMeUpDaddy`;
     const members = [...g.members].sort((a, b) => ({ organizer: 0, co: 1, member: 2 }[a.role] - { organizer: 0, co: 1, member: 2 }[b.role]) || a.joinedAt - b.joinedAt);
     const today = store.todayIso();
-    const upcomingRsvps = g.rsvps.filter((r) => r.occurrence >= today && r.status === 'going').length;
+    const evById = Object.fromEntries(g.events.map((e) => [e.id, e]));
+    // RSVPs on dates that dropped out of an event's schedule are kept, but don't count.
+    const upcomingRsvps = g.rsvps.filter((r) => r.occurrence >= today && r.status === 'going' && evById[r.eventId] && isOccurrence(evById[r.eventId], r.occurrence)).length;
     const sheets = Object.fromEntries((await store.getSheets([...new Set(g.events.flatMap((e) => e.sheetIds || []))])).map((s) => [s.id, s]));
     const pct = Math.round((g.members.length / store.FREE_MEMBER_LIMIT) * 100);
 
@@ -83,12 +94,16 @@ export async function groupManageView(root, { id }) {
         <ul class="people card member-admin">${members.map((m) => html`<li>
           <div class="person person-row">${avatar(m.name)}<div><strong>${m.name}</strong>${m.id === viewerId ? ' (you)' : ''} ${roleBadge(m.role)}
             <span class="muted small">${m.contact ? (isEmail(m.contact) ? html`<a href="mailto:${encodeURIComponent(m.contact)}">${m.contact}</a>` : m.contact) : 'No email'} · joined ${timeAgo(m.joinedAt)}</span></div></div>
-          ${m.role === 'organizer' ? '' : html`<div class="btn-row">
+          ${m.role === 'organizer' ? '' : isOrganizer ? html`<div class="btn-row">
             <button type="button" class="btn btn-sm btn-ghost" data-role="${m.id}" data-to="${m.role === 'co' ? 'member' : 'co'}" aria-label="${m.role === 'co' ? `Remove co-organizer role from ${m.name}` : `Make ${m.name} a co-organizer`}">${m.role === 'co' ? 'Remove co-organizer' : 'Make co-organizer'}</button>
             <button type="button" class="btn btn-sm btn-danger-ghost" data-remove="${m.id}" data-name="${m.name}" aria-label="Remove ${m.name} from the group">${icon('trash')} Remove</button>
-          </div>`}
+          </div>` : m.id === viewerId ? html`<div class="btn-row">
+            <button type="button" class="btn btn-sm btn-ghost" data-role="${m.id}" data-to="member" aria-label="Step down as co-organizer">Step down as co-organizer</button>
+          </div>` : m.role === 'member' ? html`<div class="btn-row">
+            <button type="button" class="btn btn-sm btn-danger-ghost" data-remove="${m.id}" data-name="${m.name}" aria-label="Remove ${m.name} from the group">${icon('trash')} Remove</button>
+          </div>` : ''}
         </li>`)}</ul>
-        <p class="tiny muted">Co-organizers can post announcements, create events, attach sheets and see this view. Free on every plan in this prototype.</p>
+        <p class="tiny muted">Co-organizers can post announcements, create and edit events, attach sheets, remove regular members and see this view. Only the organizer changes roles. Co-organizers are a Group Plus feature ($5/mo); this prototype doesn't enforce plans, so you can try them now.</p>
       </section>
     </div>`.s;
     return g;
@@ -99,6 +114,8 @@ export async function groupManageView(root, { id }) {
   root.addEventListener('click', async (e) => {
     const t = e.target.closest('button');
     if (!t) return;
+    await refreshAuth();
+    if (!auth) { lockPage(); return; }
     if (t.hasAttribute('data-share')) return shareGroup(await store.getGroup(id));
     if (t.hasAttribute('data-new-event')) return openNewEventDialog(await store.getGroup(id), auth, { onCreated: async () => { g = await render(); } });
     if (t.dataset.role) {
@@ -126,7 +143,7 @@ export async function groupManageView(root, { id }) {
         const evs = Object.fromEntries(g.events.map((x) => [x.id, x]));
         for (const r of [...g.rsvps].sort((a, b) => a.occurrence.localeCompare(b.occurrence))) {
           const ev = evs[r.eventId];
-          if (ev) rows.push([ev.title, r.occurrence, ev.start, ev.end, r.name, r.contact, r.status, new Date(r.queuedAt || r.createdAt).toISOString()]);
+          if (ev && isOccurrence(ev, r.occurrence)) rows.push([ev.title, r.occurrence, ev.start, ev.end, r.name, r.contact, r.status, new Date(r.updatedAt || r.queuedAt || r.createdAt).toISOString()]);
         }
         download(`${slugify(g.name)}-rsvps.csv`, toCsv(rows), 'text/csv;charset=utf-8');
       }
@@ -134,6 +151,9 @@ export async function groupManageView(root, { id }) {
     }
   });
 
-  const unsub = store.subscribe(async () => { if (!document.querySelector('dialog[open]')) g = await render(); });
+  const unsub = store.subscribe(async () => {
+    if (document.querySelector('dialog[open]')) return;
+    try { g = await render(); } catch (ex) { if (ex.code === 'forbidden') lockPage(); else throw ex; }
+  });
   return { cleanup: unsub };
 }
