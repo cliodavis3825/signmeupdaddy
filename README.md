@@ -1,89 +1,167 @@
-# SignMeUpDaddy
+# signmeupdaddy
 
-Free sign-up sheets and groups with dad energy. **No ads, ever.**
-This is a front-end prototype for signmeupdaddy.com: plain HTML, CSS and vanilla JS (ES modules), with no build step and no dependencies to install.
+A shared event-signup engine for clubs. Static site on GitHub Pages; Supabase (Postgres) holds the data.
+518 Analog Club is the first club. Any club can be added later with one SQL row.
 
-## Run it
+**Built for game and book nights** (what Luma, Partiful and SignUpGenius don't do):
+- **Tables, not just headcount.** Set players per table (4 for mahjong) and guests see "3 more players complete Table 3". One click seats everyone: experienced players spread across tables, brand-new players next to them, parties kept together. Attendees see their table number.
+- **Gear tracking.** "I can bring a mahjong set" on the form; organizers see sets vs. tables needed and get warned when a table has none.
+- **Experience levels** collected at signup and used for seating.
+- **No-show defence.** Confirmation, waitlist-promotion and day-before reminder emails (each with a one-click "release my spot"), door check-in, and per-person attendance badges ("2 no-shows", "3× regular") built from past check-ins.
+- **Analog at the door.** Printable roster with tick boxes, and printable table cards (one big number per page).
+- **Follow the club.** A subscribable calendar feed so members get new nights in Apple/Google/Outlook automatically.
+- **Book club details**: this month's title, author and cover on the event and in emails.
 
-```sh
-cd signmeupdaddy
-python -m http.server 8000
+**Also:** month calendar and upcoming list, filter by type, capacity with automatic FIFO waitlist,
+guests per signup, duplicate-email protection, add to calendar (.ics or Google), cancel links (also saved
+under "My signups" on the device), organizer dashboard with magic-link login, roster with CSV export
+and copy-emails, "+1 week" duplicate for recurring nights, and an iframe embed that auto-sizes on any site.
+
+With `assets/config.js` left blank it runs in **demo mode** (data saved in the browser only), so you can click around before any setup.
+
+## Files
+```
+index.html            app shell (calendar, event, cancel, my signups, admin)
+assets/config.js      ← the only file you edit (Supabase URL, anon key, Turnstile site key)
+assets/api.js         data layer: Supabase or demo
+assets/app.js         UI + routing (#/, #/e/<id>, #/cancel/<token>, #/mine, #/admin)
+assets/util.js        dates, .ics, CSV
+assets/app.css
+supabase/schema.sql   tables, row-level security, signup/cancel/waitlist functions, rate limit, audit log
+supabase/functions/signup/       CAPTCHA + rate limit in front of every public signup; sends the confirmation
+supabase/functions/send-outbox/  delivers queued emails + queues day-before reminders (called by notify.yml)
+supabase/functions/ical/         subscribable club calendar feed
+supabase/functions/_shared/      iCalendar + email rendering shared by the functions
+supabase/config.toml             which functions skip JWT checks (feed + cron endpoint)
+.github/workflows/notify.yml     drains the email outbox every 15 minutes
+.github/workflows/keepalive.yml   stops the free Supabase project from auto-pausing
+CNAME                 signmeupdaddy.com
 ```
 
-Then open <http://localhost:8000/>. It needs a static server because ES modules don't load from `file://`.
+## Setup (about 30 minutes)
 
-On first load the app adds three demo sheets and one demo group, and treats this browser as their organizer:
+### 1. Supabase
+1. Create a free project at supabase.com.
+2. SQL Editor → paste all of `supabase/schema.sql` → Run. It creates the `518analog` club.
+3. Authentication → URL Configuration: set Site URL to `https://signmeupdaddy.com` and add `https://signmeupdaddy.com/**` to Redirect URLs.
+4. Project Settings → API: copy the Project URL and the `anon` public key into `assets/config.js`.
+   (The anon key is meant to be public. Row-level security keeps attendee emails private; the public can only list events and use cancel links. Signups go through the Edge Function in step 4.)
 
-- `#/s/room12-potluck`: potluck with item/quantity slots, one full slot and one waitlisted person
-- `#/s/fall-fest`: volunteer shifts with time slots
-- `#/g/trail-dads`: **Saturday Trail Dads**, a weekly hike with a capped RSVP list and an attached snack sheet ("3/4 claimed")
+### 2. GitHub Pages
+1. Create a repo (e.g. `signmeupdaddy`) and push these files.
+2. Settings → Pages → Deploy from branch → `main` / root.
+3. Custom domain: `signmeupdaddy.com` (the CNAME file is already here). Turn on **Enforce HTTPS** once it's offered.
 
-To reset everything, clear the site's localStorage (DevTools → Application → Local Storage). If saved data is ever unreadable, the app keeps a copy under `smud:v2:backup` before starting fresh and says so in a banner.
+### 3. DNS at your registrar
+| Type | Host | Value |
+|---|---|---|
+| A | @ | 185.199.108.153 |
+| A | @ | 185.199.109.153 |
+| A | @ | 185.199.110.153 |
+| A | @ | 185.199.111.153 |
+| CNAME | www | `<your-github-username>.github.io` |
 
-## Features
+### 4. Security: CAPTCHA, sign-in hardening, signup endpoint
 
-### Phase 1: sign-up sheets
-- **Landing page**: tagline, positioning, "No ads, ever" promise, feature grid, templates, comparison with SignUpGenius, pricing, CTA.
-- **3-step sheet builder** (Basics → Slots → Review & publish) with a live preview. Templates: Potluck, Volunteer Shifts, Snack Rotation, Meal Train, Carpool, Blank. Slots can be time slots (date + start/end) or items with a quantity ("Desserts ×3"), and you can mix both. Each slot has a capacity limit, and the waitlist is free. You can reorder, duplicate ("duplicate to next day") and delete slots. Validation shows an error summary and marks the bad fields. The draft is kept in sessionStorage.
-- **Public sheet** (`#/s/<id>`): mobile-first layout, large tap targets, live "3 of 5 filled" progress bars (overall and per slot), and a "No ads, ever" badge. Signup is one tap in an inline dialog: name plus email or phone, no account. Name and contact are remembered, so the next signup is truly one tap. When a slot is full, people join its waitlist. Changes made in other tabs show up live and are announced through `aria-live`.
-- **Confirmation** (`#/done/<token>`): Google Calendar link, downloadable `.ics`, and a private edit link with a copy button (this stands in for the emailed link).
-- **Edit/cancel** (`#/edit/<token>`): change name, contact, note or slot, or cancel. When a confirmed spot opens up, the first person on that slot's waitlist moves in.
-- **Share panel**: copy link, QR code, an editable pre-written group-text message (copy, `sms:` link, Web Share when available).
-- **Organizer dashboard** (`#/s/<id>/manage`): stats, who signed up for what, open spots, waitlists, remove a signup (with waitlist promotion), CSV export (guarded against formula injection), delete sheet, and an "only open slots" filter.
-- **Edit after publishing** (`#/s/<id>/edit`): the same 3-step builder, pre-filled. Change the title, details, date, slots and capacities. Signups are never deleted: removing a slot that has people hides it from the sheet and keeps the signups on the dashboard (with a **Restore slot** button); lowering a capacity keeps everyone already confirmed. Both, and date/time changes on slots with people, are spelled out on the review step and confirmed before saving. Raising a capacity moves waitlisted people in.
-- **My sheets** on the home page (`#/mine`).
-- **Nudge**: organizers of a standalone sheet see "Doing this regularly? Turn it into a Group." It opens the group builder pre-filled from that sheet, with the sheet already attached.
+**a. Cloudflare Turnstile** (free): Cloudflare dashboard → Turnstile → Add widget.
+Hostnames: `signmeupdaddy.com` (add `localhost` while testing). Mode: Managed.
+Put the **site key** in `assets/config.js` → `TURNSTILE_SITE_KEY`. Keep the **secret key** for b and d.
 
-### Phase 2: Groups
-- **Groups home** (`#/groups`): pitch, my groups, how it works ("Event = RSVP + sheet"), pricing.
-- **3-step group builder** (`#/groups/new`): name, emoji, cover colour, description, location, public/private, then an optional first event (one-off, weekly, biweekly or monthly; capacity; attach a sheet), then review. The last step can include a pinned welcome post.
-- **Group page** (`#/g/<id>`): cover, members with roles, upcoming events (next date plus the following few), announcements (one pinned), share link and QR. Private groups show only the cover until you join.
-- **Join** with name + email only, no account. Each member gets a **personal link** (`#/g/<id>/me/<token>`, shown in the group sidebar; stands in for an emailed magic link). The token is the identity: joining with an email that's already in the group is refused ("Use your personal link to get back in"), so nobody can take over another member, the organizer or a co-organizer by typing their email.
-- **RSVP** Going / Maybe / Can't with capacity limits and a free waitlist. Changing from Going promotes the next person in line. RSVPing as a non-member joins you to the group in the same step.
-- **Attached sign-up sheets**: create a sheet inline from a template, or attach an existing one. Template slots are generated for each of the event's next occurrences. Event cards show progress per date ("3/4 claimed"). **After you RSVP Going, a prompt asks "Want to bring something?" and you can claim a slot with one tap**, with calendar and edit links right there.
-- **Event page** (`#/g/<id>/e/<eventId>/<date>`): date picker chips, RSVP, who's going (visible to everyone), per-date slots to claim. Add to calendar for one date (Google or `.ics`) or for the whole series (`.ics` with `RRULE`, or Google with recurrence).
-- **Co-organizers** (a Group Plus feature; plans aren't enforced in the prototype): organizers can promote members. A co-organizer can then post, create and edit events, attach sheets, remove regular members and open the organizer view. They're authorised by their own member token plus their current role (never the group's admin token), and the organizer view never shows anyone's tokens. Only the organizer changes roles. Demoting or removing a co-organizer takes effect immediately and rotates the group's admin token and the organizer's member token, so nothing they saved keeps working.
-- **Edit an event** after publishing (organizers, from the event page): title, date, time, repeats, spots, location, details. RSVPs are never deleted; ones on dates that drop out of the series are kept and come back if the change is undone. Shrinking spots below the current "going" count, orphaning RSVPs, or moving dates of an event with an attached sheet is confirmed first. More spots move waitlisted people in.
-- **Private groups** also lock their attached sheets: a non-member opening the sheet link sees a "belongs to a private group" page.
-- **Organizer view** (`#/g/<id>/manage`): member list (role changes, remove), RSVP counts per event and date with sheet progress, members CSV and RSVPs CSV, and a member counter against the free plan's 50-member cap.
+**b. Supabase Auth settings** (dashboard menu names shift occasionally; search the setting name if one has moved)
+| Where | Setting |
+|---|---|
+| Authentication → Bot and Abuse Protection | Enable CAPTCHA → Turnstile → paste the secret key |
+| Authentication → Sign In / Providers → Email | **Turn off "Allow new users to sign up"**. Organizers are invited, never self-registered. Set Email OTP expiration to `900` (15 min). |
+| Authentication → Emails → Templates → Magic Link | Add the code to the body, e.g. `<h2>{{ .Token }}</h2><p>Or <a href="{{ .ConfirmationURL }}">sign in with this link</a>.</p>` |
+| Authentication → Emails → SMTP Settings | Connect a sender (Resend, Postmark, Brevo…) on your own domain. The built-in sender is for testing and capped at 2 emails/hour. Turn **off** link tracking at the provider so it doesn't rewrite sign-in links. |
+| Authentication → URL Configuration | Site URL `https://signmeupdaddy.com`; Redirect URLs exactly `https://signmeupdaddy.com/**` (no wildcards on other hosts) |
+| Authentication → Multi-Factor | App Authenticator (TOTP) **enabled** (it is by default) |
 
-### Quality
-- Light and dark themes via CSS custom properties and `prefers-color-scheme`, plus a manual toggle that is remembered.
-- Responsive down to 360px with no horizontal scroll (verified on every route).
-- Accessibility: semantic HTML, labelled fields, visible focus rings, native `<dialog>` modals (focus trap, Esc to close, focus returns to the trigger), `aria-pressed` RSVP buttons, `aria-live` progress announcements, a skip link, and focus moved to the page heading on each route change.
-- All user text is escaped: the `html` tagged template escapes every interpolated value by default.
-- SEO and link previews: meta description, canonical URL, Open Graph and Twitter card tags (`og:url` https://signmeupdaddy.com/, 1200×630 `img/og-image.png`), SVG favicon and Apple touch icon. Share links in the app are built from `location.origin`, so they work locally and on the real domain.
-
-## File structure
-
+**c. Invite yourself as an organizer**: Authentication → Users → Add user → Send invitation. Then in the SQL Editor:
+```sql
+insert into public.club_admins (club_id, user_id)
+select '518analog', id from auth.users where email = 'YOUR-EMAIL';
 ```
-index.html            App shell: header/nav, <main id="app">, footer, toast/live regions, meta tags
-css/styles.css        All styles: design tokens (light/dark), components, layouts
-img/                  favicon.svg, apple-touch-icon.png, og-image.png
-js/app.js             Hash router, theme toggle, focus management
-js/store.js           Data layer (localStorage). The only module that persists anything.
-js/model.js           Pure helpers: slot stats, grouping, recurrence, RSVP tallies, per-date sheet progress
-js/templates.js       Sheet templates + slot factories
-js/seed.js            Demo data
-js/util.js            Safe html`` templating, ids, dates, clipboard, downloads, toasts
-js/calendar.js        Google Calendar URLs, .ics builder (incl. RRULE)
-js/qr.js              QR SVG via qrcode-generator 1.4.4 (cdnjs, pinned)
-js/components.js      Icons, sheet renderer, progress bars, dialogs, share panel
-js/views/*.js         landing, builder, sheet, signup dialog, participant (done/edit), manage,
-                      groups (home + builder), group (group + event pages), groupManage,
-                      groupsShared (event cards, RSVP + claim flow, pricing), notfound
-docs/                 Market research briefs
+Sign in at `signmeupdaddy.com/#/admin`: email → 6-digit code → set up your authenticator app (first time) → dashboard.
+
+**d. Deploy the signup Edge Function** (needs the Supabase CLI once, from your computer):
+```bash
+supabase login
+supabase link --project-ref YOUR-PROJECT-REF
+supabase secrets set TURNSTILE_SECRET=... RATE_SALT="$(openssl rand -hex 32)" \
+  ALLOWED_ORIGINS=https://signmeupdaddy.com,https://www.signmeupdaddy.com
+supabase functions deploy signup
 ```
 
-### Data layer
-`store.js` keeps data in generic collections keyed by type (`db.collections.sheets`, `db.collections.groups`), plus per-type "mine" refs that hold admin tokens. Every function is `async` and returns copies. Public getters (`getSheet`, `getGroup`) strip contacts and tokens; admin calls need a token. To move to a real backend, rewrite this module as a fetch client. Views only use its exported functions. Sheets have optional `groupId` / `eventId` fields.
+**e. Email (confirmations, waitlist promotions, reminders)**
+1. Create a free [Resend](https://resend.com) account, verify your sending domain, create an API key.
+2. Set the function secrets and deploy the other two functions:
+```bash
+supabase secrets set RESEND_API_KEY=re_... MAIL_FROM="518 Analog Club <hello@YOUR-DOMAIN>" \
+  SITE_URL=https://signmeupdaddy.com CRON_SECRET="$(openssl rand -hex 32)"
+supabase functions deploy send-outbox
+supabase functions deploy ical
+```
+3. GitHub repo secrets for the notify workflow: `SUPABASE_URL` (already set) and `CRON_SECRET` (same value).
+4. Optional reply-to per club: `update clubs set contact_email = 'you@example.com' where id = '518analog';`
 
-## Known limitations (prototype)
-- **No backend.** Everything lives in this browser's localStorage. Shared links only work in the same browser profile, and "live" updates only reach other tabs in the same browser.
-- **No email/SMS.** Edit links, personal links and organizer access are shown on screen instead of emailed. Organizer and co-organizer rights belong to the browser that holds the token.
-- **Storage errors are surfaced, not hidden.** If a write fails (storage full or blocked) the change is rolled back, the action shows an error and a banner explains why.
-- **Link previews are static.** Crawlers don't run JS, so every link (sheets and groups included) previews the homepage card. Per-sheet previews will need server-side rendering.
-- Paid plans aren't enforced, except the free 50-member cap on groups.
-- A recurring event's attached sheet gets slots for its next ~4 dates when created. It doesn't roll forward automatically (that's P1). Item-only sheets (e.g. Potluck) apply to every date cumulatively.
-- Calendar times are "floating" local times with no time zone.
-- The QR code needs the CDN script. Offline, the share panel shows a notice instead.
+How it works: every email is a row in the `outbox` table first (written by a database trigger), then delivered. If Resend is down, rows wait and are retried up to 6 times, and each send carries an idempotency key so a retry can't double-send. Confirmations go out immediately from the signup function; promotions and reminders go out on the next notify run. Restoring a backup with `set smud.restoring = on` does not re-email anyone.
+
+**Scheduled jobs caveat:** GitHub runs schedules best-effort (runs can be delayed), and in a **public** repo it switches schedules off after 60 days with no repository activity. Keep the repo private, push something every couple of months, or move the notify/keepalive pings to Supabase Cron.
+
+#### What the auth flow now does
+- **Organizers**
+  - **CAPTCHA** on the sign-in form (Supabase Auth verifies the token server-side).
+  - **No self-signup.** Unknown emails get the same "if this is an organizer account…" message, so the form can't be used to discover who's an organizer.
+  - **6-digit code** as well as the link. This covers corporate mail scanners that "click" links before you do, and opening the email on a different device.
+  - **Required authenticator-app MFA.** It's enforced in the database, not just the UI: `is_club_admin()` only returns true on an `aal2` session. A stolen inbox alone gets you nothing but the public calendar.
+  - **Idle sign-out** after 30 minutes (`ORGANIZER_IDLE_MINUTES`), plus **Sign out everywhere**.
+  - **Audit log** (`audit_log` table): every event create/edit/delete and every signup change, with who did it and their auth level.
+- **Public signups**
+  - **Turnstile**, checked by the Edge Function for the right action and hostname. Tokens are single-use.
+  - **Honeypot field and a minimum fill time.**
+  - **10 signups per IP per hour.** The IP is stored only as a salted hash.
+  - **Locked-down database function.** `sign_up()` is no longer callable from the browser, so the CAPTCHA can't be skipped by hitting the API directly.
+- **Site**
+  - **Content-Security-Policy** in `index.html`: scripts only from this site, esm.sh and Cloudflare; network calls only to Supabase.
+
+### 5. Keep the free database awake
+Free Supabase projects pause after a week with no activity. In the GitHub repo:
+Settings → Secrets and variables → Actions → add `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
+The included workflow pings the database every 3 days.
+
+### 6. Nightly backups (the free plan has none)
+Add two more repo secrets:
+- `SUPABASE_DB_URL`: Supabase → **Connect** → **Session pooler** URI (port 5432), with your DB password filled in.
+  Use the session pooler, not "Direct": GitHub's runners are IPv4-only and the direct connection is IPv6.
+- `BACKUP_PASSPHRASE`: a long random string. Save it in your password manager; backups can't be opened without it.
+
+`.github/workflows/backup.yml` runs nightly (about 2:40 AM Eastern). It dumps clubs, events and signups,
+**restore-tests the dump** against `schema.sql` in a throwaway Postgres (the run summary shows the row counts),
+then saves it AES-256-encrypted as a workflow artifact for 30 days. Encrypted because it holds attendee
+names and emails. Run it once by hand (Actions → db-backup → Run workflow) to confirm it's green.
+Restore steps are at the bottom of the workflow file.
+
+## Adding another club (book club, etc.)
+```sql
+insert into public.clubs (id, name, tagline, accent) values ('bookclub', 'signmeupdaddy Book Club', 'One book a month', '#c8452c');
+```
+Its calendar lives at `signmeupdaddy.com/?club=bookclub`. Add organizers with the step 4c query using `'bookclub'`.
+
+## Embedding on another site
+```html
+<iframe id="signup-frame" src="https://signmeupdaddy.com/?club=518analog&embed=1"
+        style="width:100%;border:0;min-height:640px" title="Events"></iframe>
+<script>
+addEventListener('message', e => {
+  if (e.origin === 'https://signmeupdaddy.com' && e.data?.type === 'smud:height')
+    document.getElementById('signup-frame').style.height = e.data.height + 8 + 'px';
+});
+</script>
+```
+
+## Known limits / next steps
+- **No confirmation emails yet.** People get their cancel link on screen and it's saved on their device. Next step: a Supabase Edge Function + Resend to email confirmations, waitlist promotions and day-before reminders.
+- Organizers enter event times in their own browser's time zone; display is America/New_York (change `TIMEZONE` in config).
+- Lost authenticator: another organizer can't reset it from the app yet. You remove the factor in Supabase (Authentication → Users → user → MFA) and they re-enroll on next sign-in.
+- Organizer sessions use Supabase's default token lifetime plus the in-app idle sign-out. Supabase also has server-side session time-boxes and inactivity timeouts under Authentication → Sessions. I believe those are paid-plan features but haven't confirmed it, so check your plan.

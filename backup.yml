@@ -1,0 +1,92 @@
+# Nightly encrypted backup of the signmeupdaddy database, with an automatic restore test.
+#
+# Repo secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_DB_URL     Supabase → Connect → "Session pooler" URI (port 5432), password filled in.
+#                       Must be the session pooler: GitHub runners are IPv4-only and the direct
+#                       connection is IPv6 on the free plan.
+#   BACKUP_PASSPHRASE   Long random string. Store it in your password manager too:
+#                       without it the backups can't be opened.
+#
+# Output: an encrypted .sql.gz.gpg kept as a workflow artifact for 30 days.
+# Artifacts are encrypted because they contain attendee names and emails.
+name: db-backup
+on:
+  schedule:
+    - cron: "41 7 * * *"        # ~2:41 AM Eastern
+  workflow_dispatch:
+concurrency: db-backup
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      verify:                     # throwaway Postgres for the restore test
+        image: postgres:17
+        env: { POSTGRES_PASSWORD: verify }
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-retries 10
+    env:
+      DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Check secrets
+        run: |
+          if [ -z "$DB_URL" ] || [ -z "$PASS" ]; then
+            echo "::error::Add SUPABASE_DB_URL and BACKUP_PASSPHRASE repo secrets."; exit 1
+          fi
+
+      - name: Install Postgres 17 client (pg_dump must be >= server version)
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/checkout@v4      # for supabase/schema.sql (restore test)
+
+      - name: Dump data
+        run: |
+          psql "$DB_URL" -Atc "select 'server ' || version()"
+          pg_dump "$DB_URL" --data-only --schema=public --table='public.clubs' --table='public.events' \
+            --table='public.signups' --no-owner -f dump.sql
+          grep -q 'COPY "*public"*\."*events"*\|COPY public.events' dump.sql || { echo "::error::Dump looks empty"; exit 1; }
+
+      - name: Restore test (schema.sql + this dump, into throwaway Postgres)
+        env:
+          V: postgresql://postgres:verify@localhost:5433/postgres
+        run: |
+          psql "$V" -q -v ON_ERROR_STOP=1 -f supabase/restore-stub.sql
+          psql "$V" -q -v ON_ERROR_STOP=1 -f supabase/schema.sql
+          psql "$V" -q -v ON_ERROR_STOP=1 -c 'truncate public.clubs cascade'
+          psql "$V" -q -v ON_ERROR_STOP=1 -c 'set smud.restoring = on' -f dump.sql
+          test "$(psql "$V" -Atc 'select count(*) from public.outbox')" = 0 || { echo "::error::Restore queued emails"; exit 1; }
+          psql "$V" -Atc "select format('Restore test OK: %s clubs, %s events, %s signups',
+            (select count(*) from public.clubs), (select count(*) from public.events), (select count(*) from public.signups))" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Compress + encrypt
+        run: |
+          STAMP=$(date -u +%Y-%m-%dT%H%MZ)
+          gzip -9 dump.sql
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$PASS" \
+              --symmetric --cipher-algo AES256 -o "smud-$STAMP.sql.gz.gpg" dump.sql.gz
+          shred -u dump.sql.gz
+          echo "FILE=smud-$STAMP.sql.gz.gpg" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.FILE }}
+          path: ${{ env.FILE }}
+          retention-days: 30
+          if-no-files-found: error
+
+# To restore into a fresh Supabase project:
+#   1. Download the artifact:   gpg -d smud-....sql.gz.gpg | gunzip > dump.sql
+#   2. New project → SQL Editor → run supabase/schema.sql
+#   3. psql "<NEW SESSION POOLER URL>" -c 'truncate public.clubs cascade'
+#      psql "<NEW SESSION POOLER URL>" -v ON_ERROR_STOP=1 -c 'set smud.restoring = on' -f dump.sql
+#      (smud.restoring stops the restore from re-emailing every attendee)
+#   4. Sign in once at /#/admin and re-add yourself to club_admins (logins don't carry over).
