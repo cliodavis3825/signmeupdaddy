@@ -49,6 +49,9 @@ await check('site: home page loads', async () => {
 });
 await check('site: live config (not demo mode)', async () => expect(URL_ && KEY, 'SUPABASE_URL / anon key blank in assets/config.js'));
 await check('site: Turnstile site key set', async () => expect(cfg('TURNSTILE_SITE_KEY').startsWith('0x'), 'TURNSTILE_SITE_KEY missing'));
+await check('site: /app/ calendar loads', async () => {
+  const r = await fetch(SITE + '/app/'); return expect(r.ok, `HTTP ${r.status}`);
+});
 await check('site: /518analog/ homepage loads', async () => {
   const r = await fetch(SITE + '/518analog/'); return expect(r.ok, `HTTP ${r.status}`);
 });
@@ -142,6 +145,21 @@ else {
   await check('signup fn: fake CAPTCHA token rejected (Turnstile secret works)', async () => {
     const r = await fnAnon('signup', good); const j = await r.json();
     return expect(r.status === 400 && j.error === 'CAPTCHA_FAILED', `HTTP ${r.status} ${JSON.stringify(j)} (CAPTCHA_NOT_CONFIGURED = TURNSTILE_SECRET missing)`);
+  });
+
+  // ── 5b. club-request function guards ──────────────────────────────────
+  const cr = { club_name: 'Smoke Club', contact: 'Smoke', email: 'smoke@example.invalid', captcha: 'x', elapsed_ms: 9000, website: '' };
+  await check('club-request fn: honeypot rejected', async () => {
+    const r = await fnAnon('club-request', { ...cr, website: 'spam' }); const j = await r.json();
+    return expect(r.status === 400 && j.error === 'BOT_SUSPECTED', `HTTP ${r.status} ${JSON.stringify(j)}`);
+  });
+  await check('club-request fn: fake CAPTCHA token rejected', async () => {
+    const r = await fnAnon('club-request', cr); const j = await r.json();
+    return expect(r.status === 400 && j.error === 'CAPTCHA_FAILED', `HTTP ${r.status} ${JSON.stringify(j)}`);
+  });
+  await check('security: anon cannot read club_requests', async () => {
+    const r = await rest('club_requests?select=*&limit=1'); const j = await r.json().catch(() => []);
+    return expect(denied(r, j), `HTTP ${r.status}, returned data`);
   });
 
   // ── 6. send-outbox auth ───────────────────────────────────────────────

@@ -420,3 +420,18 @@ on conflict (id) do nothing;
 --   insert into public.club_admins (club_id, user_id)
 --   select '518analog', id from auth.users where email = 'ORGANIZER-EMAIL';
 --   3. On first sign-in they're required to set up an authenticator app.
+
+-- "Start a club" requests from the signmeupdaddy.com home page (written by the club-request Edge Function).
+create table if not exists public.club_requests (
+  id          bigint generated always as identity primary key,
+  created_at  timestamptz not null default now(),
+  club_name   text not null check (char_length(club_name) between 2 and 80),
+  contact     text not null check (char_length(contact) between 1 and 80),
+  email       text not null check (char_length(email) <= 120),
+  place       text check (char_length(place) <= 80),
+  about       text check (char_length(about) <= 600),
+  status      text not null default 'new' check (status in ('new','approved','declined'))
+);
+alter table public.club_requests enable row level security;   -- no policies: service role / dashboard only
+revoke all on public.club_requests from anon, authenticated;
+grant insert, select on public.club_requests to service_role;

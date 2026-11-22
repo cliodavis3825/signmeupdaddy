@@ -3,39 +3,101 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- Content Security Policy. GitHub Pages can't send headers, so it lives here.
-       (frame-ancestors can't be set via meta; the calendar is meant to be embeddable anyway.) -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://esm.sh https://challenges.cloudflare.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://esm.sh; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://covers.openlibrary.org https://archive.org https://*.archive.org; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://challenges.cloudflare.com; connect-src 'self' https://*.supabase.co; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'self'; form-action 'self'; object-src 'none'">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <title>signmeupdaddy — sign up, show up</title>
-  <meta name="description" content="Event signups for clubs: book club, mahjong, trivia and craft nights. Save your spot in seconds.">
-  <meta property="og:title" content="signmeupdaddy">
-  <meta property="og:description" content="Sign up, show up. Event signups for clubs.">
+  <title>SignMeUpDaddy — sign up, show up</title>
+  <meta name="description" content="Free event signups for clubs: book club, mahjong, trivia, craft nights. Pick your club, save your seat in seconds. Start a club of your own.">
+  <meta property="og:title" content="SignMeUpDaddy">
+  <meta property="og:description" content="Sign up, show up. Free event signups for clubs.">
   <meta property="og:image" content="https://signmeupdaddy.com/assets/img/og-image.png">
-  <meta name="theme-color" content="#f6f1e7">
+  <meta name="theme-color" content="#f6efdd">
   <link rel="icon" type="image/png" href="assets/img/favicon.png">
   <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/app.css">
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="landing.css">
+  <script src="redirect.js"></script>
 </head>
 <body>
-  <div id="demo-banner" class="demo-banner" hidden>Demo mode — signups are saved in this browser only. <a href="#/admin">Try the organizer view →</a></div>
+  <a class="skip" href="#find">Skip to club search</a>
   <header class="top">
-    <a class="brand" href="#/" aria-label="SignMeUpDaddy.com home"><img src="assets/img/logo-sm.png" alt="SignMeUpDaddy.com" width="76" height="64"></a>
-    <nav>
-      <a data-nav href="#/">Calendar</a>
-      <a data-nav href="#/mine">My signups</a>
-      <a data-nav href="#/admin">Organizers</a>
+    <a class="brand" href="/" aria-label="SignMeUpDaddy.com home"><img src="assets/img/logo-sm.png" alt="SignMeUpDaddy.com" width="76" height="64"></a>
+    <nav aria-label="Main">
+      <a href="#how">How it works</a>
+      <a href="#find">Find a club</a>
+      <a href="#start">Start a club</a>
+      <a href="#coffee">Buy me a coffee</a>
     </nav>
   </header>
-  <div class="club-bar"><span class="dot"></span><span id="club-name">Loading…</span></div>
-  <main id="app" aria-live="polite"><p class="empty">Loading events…</p></main>
+
+  <main>
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Free event signups for clubs</p>
+        <h1>Sign up. <em>Show up.</em></h1>
+        <p class="lede">SignMeUpDaddy is a simple home for club events: book club, mahjong night, trivia, craft circles. Members pick an event and grab a seat in under a minute. Organizers get a roster, a waitlist and reminders, with nothing to install.</p>
+        <p class="cta-row">
+          <a class="btn" href="#find">Find your club</a>
+          <a class="btn alt" href="#start">Start a club</a>
+        </p>
+      </div>
+      <img class="hero-logo" src="assets/img/logo.png" alt="" width="560" height="472">
+    </section>
+
+    <section id="how" class="block">
+      <h2>How it works</h2>
+      <ol class="steps">
+        <li><b>Find your club.</b> Search by name and open its calendar.</li>
+        <li><b>Pick an event and sign up.</b> Just a name and email. No account, no password.</li>
+        <li><b>Get your confirmation.</b> You'll get an email with a calendar invite and a link to cancel if plans change. A seat you can't use goes straight to the next person on the waitlist.</li>
+      </ol>
+      <ul class="perks">
+        <li>Seat limits and automatic waitlists</li>
+        <li>Reminder emails the day before</li>
+        <li>Calendar feed for Apple, Google and Outlook</li>
+        <li>Organizer roster, check-in and table seating</li>
+      </ul>
+    </section>
+
+    <section id="find" class="block">
+      <h2>Find a club</h2>
+      <label for="q" class="sr">Search clubs</label>
+      <input id="q" type="search" placeholder="Search by club name…" autocomplete="off">
+      <ul id="results" class="results" aria-live="polite"><li class="muted">Loading clubs…</li></ul>
+      <p class="note small">Don't see yours? <a href="#start">Start a club</a> and we'll get it set up.</p>
+    </section>
+
+    <section id="start" class="block">
+      <h2>Start a club</h2>
+      <p class="note">Tell us a little about your group and we'll set up a calendar for it, usually within a few days. It's free. We'll email you when it's ready.</p>
+      <form id="club-form" class="card form" novalidate>
+        <label>Club name <input name="club_name" required maxlength="80" autocomplete="off"></label>
+        <label>Your name <input name="contact" required maxlength="80" autocomplete="name"></label>
+        <label>Your email <input name="email" type="email" required maxlength="120" autocomplete="email"></label>
+        <label>Town or area <span class="opt">(optional)</span> <input name="place" maxlength="80"></label>
+        <label>What does your club do? <span class="opt">(optional)</span> <textarea name="about" rows="3" maxlength="600"></textarea></label>
+        <div class="hp" aria-hidden="true"><label>Website <input name="website" tabindex="-1" autocomplete="off"></label></div>
+        <div id="cf"></div>
+        <p class="err" id="club-err" role="alert"></p>
+        <button class="btn" type="submit">Send my request</button>
+      </form>
+      <div id="club-done" class="card done" hidden>
+        <h3>Got it. Thank you!</h3>
+        <p>We'll be in touch at the email you gave us once your club is ready.</p>
+      </div>
+    </section>
+
+    <section id="coffee" class="block coffee">
+      <h2>Buy me a coffee</h2>
+      <p class="note">SignMeUpDaddy is free for clubs and run by one person. If it saved you a headache, a coffee helps keep the lights on.</p>
+      <p class="cta-row"><a class="btn venmo" id="venmo" href="#coffee" target="_blank" rel="noopener" hidden>☕ Buy me a coffee on Venmo</a></p>
+    </section>
+  </main>
+
   <footer class="foot">
-    <span class="powered">Signups by <a href="https://signmeupdaddy.com" target="_blank" rel="noopener"><img class="foot-logo" src="assets/img/logo-sm.png" alt="SignMeUpDaddy.com" width="57" height="48"></a></span>
+    <p>© SignMeUpDaddy · <a href="/518analog/">518 Analog Club</a></p>
   </footer>
-  <noscript><p class="panel">This calendar needs JavaScript turned on.</p></noscript>
-  <script type="module" src="assets/app.js"></script>
+  <script type="module" src="landing.js"></script>
 </body>
 </html>
