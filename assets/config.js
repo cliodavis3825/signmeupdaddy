@@ -8,7 +8,7 @@ export const CONFIG = {
   // Same widget/key is used for organizer sign-in (Supabase Auth CAPTCHA) and public signups.
   TURNSTILE_SITE_KEY: '0x4AAAAAAGNosl1r21Y2EV5z',
   // Venmo username for the "buy me a coffee" button on the home page (no @). Leave blank to hide the button.
-  VENMO_HANDLE: '',
+  VENMO_HANDLE: 'Melissa-Davis3825',
   ORGANIZER_IDLE_MINUTES: 30,
   SITE_URL: 'https://signmeupdaddy.com',
   DEFAULT_CLUB: '518analog',
