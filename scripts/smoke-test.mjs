@@ -84,7 +84,7 @@ else {
     const r = await rest('clubs?select=contact_email'); const j = await r.json();
     return expect(!r.ok, `HTTP ${r.status}: contact_email is readable by the public`);
   });
-  for (const t of ['signups', 'club_admins', 'audit_log', 'outbox', 'rate_limits', 'club_requests', 'subscribers', 'event_posts']) {
+  for (const t of ['signups', 'club_admins', 'audit_log', 'outbox', 'rate_limits', 'club_requests', 'subscribers', 'event_posts', 'issue_reports']) {
     await check(`security: anon cannot read ${t}`, async () => {
       const r = await rest(`${t}?select=*&limit=1`); const j = await r.json().catch(() => []);
       return expect(denied(r, j), `HTTP ${r.status}, returned data`);
@@ -173,6 +173,10 @@ else {
   });
   await check('post-comment fn: fake CAPTCHA token rejected', async () => {
     const r = await fnAnon('post-comment', { event_id: good.event_id, name: 'Smoke', body: 'hi', captcha: 'x', elapsed_ms: 9000, website: '' }); const j = await r.json();
+    return expect(r.status === 400 && j.error === 'CAPTCHA_FAILED', `HTTP ${r.status} ${JSON.stringify(j)}`);
+  });
+  await check('report-issue fn: fake CAPTCHA token rejected', async () => {
+    const r = await fnAnon('report-issue', { topic: 'Something else', what: 'smoke test', name: 'Smoke', email: 'smoke@example.invalid', captcha: 'x', elapsed_ms: 9000, website: '' }); const j = await r.json();
     return expect(r.status === 400 && j.error === 'CAPTCHA_FAILED', `HTTP ${r.status} ${JSON.stringify(j)}`);
   });
   await check('notify fn: unknown event is refused (no email sent)', async () => {
