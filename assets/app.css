@@ -213,3 +213,13 @@ td input.ci { width: 20px; height: 20px; accent-color: var(--ok); }
 
 .brand img { display: block; height: 64px; width: auto; }
 .foot-logo { height: 48px; width: auto; vertical-align: middle; margin-left: .35rem; }
+
+/* email list + event posts */
+.subbox { margin-top: 1.5rem; }
+.posts h3, .subbox h3 { margin-top: 0; }
+.posts .post { padding: .7rem .9rem; margin: .6rem 0; background: #fffdf8; border: 1px solid #e3dacb; border-radius: 10px; }
+.posts .post p, .panel .post p { margin: .25rem 0 0; }
+.post small { color: #6b635b; }
+.post.upd { border-left: 5px solid var(--accent, #2f6b4f); background: #f4f8f4; }
+.post.hid { opacity: .55; }
+.updates { margin-bottom: 1.2rem; }

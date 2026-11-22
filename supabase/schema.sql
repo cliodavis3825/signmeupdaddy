@@ -435,3 +435,87 @@ create table if not exists public.club_requests (
 alter table public.club_requests enable row level security;   -- no policies: service role / dashboard only
 revoke all on public.club_requests from anon, authenticated;
 grant insert, select on public.club_requests to service_role;
+-- ───────────────────────── email list + event posts ─────────────────────────
+alter table public.events add column if not exists announced_at timestamptz;   -- last "email the list" send
+
+create table if not exists public.subscribers (
+  id           bigint generated always as identity primary key,
+  club_id      text not null references public.clubs(id) on delete cascade,
+  email        text not null check (email ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$' and char_length(email) <= 120),
+  name         text check (char_length(name) <= 80),
+  status       text not null default 'pending' check (status in ('pending','active','unsubscribed')),
+  token        uuid not null default gen_random_uuid() unique,   -- secret in the confirm / unsubscribe links
+  created_at   timestamptz not null default now(),
+  requested_at timestamptz not null default now(),
+  confirmed_at timestamptz
+);
+create unique index if not exists subscribers_one_per_email on public.subscribers (club_id, lower(email));
+alter table public.subscribers enable row level security;
+drop policy if exists subscribers_admin_read on public.subscribers;
+create policy subscribers_admin_read on public.subscribers for select using (is_club_admin(club_id));
+revoke all on public.subscribers from anon, authenticated;
+grant select on public.subscribers to authenticated;
+grant select, insert, update on public.subscribers to service_role;
+
+-- Confirm / unsubscribe links carry the secret token; no login needed.
+create or replace function public.confirm_subscription(p_token uuid)
+returns text language plpgsql security definer set search_path = public as $$
+declare c text;
+begin
+  update subscribers set status = 'active', confirmed_at = now()
+   where token = p_token and status = 'pending' returning club_id into c;
+  if c is null then
+    select club_id into c from subscribers where token = p_token and status = 'active';
+  end if;
+  return (select name from clubs where id = c);
+end $$;
+create or replace function public.unsubscribe(p_token uuid)
+returns text language plpgsql security definer set search_path = public as $$
+declare c text;
+begin
+  update subscribers set status = 'unsubscribed' where token = p_token returning club_id into c;
+  return (select name from clubs where id = c);
+end $$;
+revoke all on function public.confirm_subscription(uuid) from public;
+revoke all on function public.unsubscribe(uuid) from public;
+grant execute on function public.confirm_subscription(uuid) to anon, authenticated;
+grant execute on function public.unsubscribe(uuid) to anon, authenticated;
+
+create table if not exists public.event_posts (
+  id          bigint generated always as identity primary key,
+  event_id    uuid not null references public.events(id) on delete cascade,
+  kind        text not null check (kind in ('update','comment')),
+  author_name text not null check (char_length(author_name) between 1 and 60),
+  body        text not null check (char_length(body) between 1 and 2000),
+  hidden      boolean not null default false,
+  emailed_at  timestamptz,
+  created_at  timestamptz not null default now()
+);
+create index if not exists event_posts_event on public.event_posts (event_id, created_at);
+alter table public.event_posts enable row level security;
+-- Organizers manage posts for their own events; the public reads through list_event_posts() and comments
+-- through the post-comment Edge Function (CAPTCHA + rate limit).
+drop policy if exists posts_admin_read   on public.event_posts;
+drop policy if exists posts_admin_insert on public.event_posts;
+drop policy if exists posts_admin_update on public.event_posts;
+drop policy if exists posts_admin_delete on public.event_posts;
+create policy posts_admin_read   on public.event_posts for select using (exists (select 1 from events e where e.id = event_id and is_club_admin(e.club_id)));
+create policy posts_admin_insert on public.event_posts for insert with check (kind = 'update' and exists (select 1 from events e where e.id = event_id and is_club_admin(e.club_id)));
+create policy posts_admin_update on public.event_posts for update using (exists (select 1 from events e where e.id = event_id and is_club_admin(e.club_id)));
+create policy posts_admin_delete on public.event_posts for delete using (exists (select 1 from events e where e.id = event_id and is_club_admin(e.club_id)));
+revoke all on public.event_posts from anon, authenticated;
+grant select, delete on public.event_posts to authenticated;
+grant insert (event_id, kind, author_name, body) on public.event_posts to authenticated;
+grant update (hidden) on public.event_posts to authenticated;
+grant select, insert, update on public.event_posts to service_role;
+
+create or replace function public.list_event_posts(p_event uuid)
+returns table (id bigint, kind text, author_name text, body text, created_at timestamptz)
+language sql stable security definer set search_path = public as $$
+  select p.id, p.kind, p.author_name, p.body, p.created_at
+    from event_posts p join events e on e.id = p.event_id
+   where p.event_id = p_event and e.published and not p.hidden
+   order by p.created_at
+$$;
+revoke all on function public.list_event_posts(uuid) from public;
+grant execute on function public.list_event_posts(uuid) to anon, authenticated;
