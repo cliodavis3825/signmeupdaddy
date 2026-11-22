@@ -229,3 +229,7 @@ td input.ci { width: 20px; height: 20px; accent-color: var(--ok); }
 .tab { background: none; border: 0; padding: .55rem .9rem; font: 700 .95rem var(--body, inherit); color: inherit; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; }
 .tab.on { border-bottom-color: var(--hot, #2f6b4f); }
 #clubsel { font: 800 1.3rem var(--display, inherit); max-width: 100%; }
+
+/* My signups: one calendar across clubs */
+.clubtag { display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .03em; padding: .1rem .5rem; border-radius: 999px; color: #fff; background: var(--k, #2f6b4f); }
+.legend { display: flex; flex-wrap: wrap; gap: .35rem; margin: .5rem 0; }
