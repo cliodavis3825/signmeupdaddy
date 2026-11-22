@@ -50,6 +50,15 @@ async function route() {
   document.body.dataset.mode = a.mode;
   const banner = document.getElementById('demo-banner'); if (banner) banner.hidden = a.mode !== 'demo';
   await loadClub(a);
+  // Coming back from the emailed sign-in link: let the auth library read the tokens in the URL first, then land on the admin page.
+  // (The link used to point at '#/admin', which collides with the token hash and bounced people back to the sign-in form.)
+  if (params.has('admin') || /access_token|error_code/.test(location.hash)) {
+    await a.session();
+    if (/error_code=otp_expired|error_code=access_denied/.test(location.hash)) toast('That sign-in link expired. Request a new code.');
+    if (params.has('admin') || /error_code/.test(location.hash)) {
+      history.replaceState(null, '', location.pathname + '?club=' + encodeURIComponent(CLUB) + '#/admin');
+    }
+  }
   const [, view, arg, arg2] = (location.hash.slice(1) || '/').split('/');
   try {
     if (view === 'e') await viewEvent(a, arg);
@@ -747,8 +756,8 @@ function codeStep(a, email) {
     <section class="panel narrow auth">
       <p class="step">Organizer sign-in · step 1 of 2</p>
       <h2>Check your email</h2>
-      <p class="hint">If <strong>${esc(email)}</strong> is an organizer account, a 6-digit code is on its way. Use it within 15 minutes. ${a.mode === 'demo' ? '(Demo: type any 6 digits.)' : ''}</p>
-      <form id="code"><label>Code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required class="code"></label>
+      <p class="hint">If <strong>${esc(email)}</strong> is an organizer account, a sign-in code is on its way (6 to 8 digits). Use it within 15 minutes. ${a.mode === 'demo' ? '(Demo: type any 6 digits.)' : ''}</p>
+      <form id="code"><label>Code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required class="code"></label>
       <button class="btn primary">Continue</button><p class="err" role="alert"></p></form>
       <button class="link" data-act="back">Use a different email</button>
     </section>`;
