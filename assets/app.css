@@ -223,3 +223,9 @@ td input.ci { width: 20px; height: 20px; accent-color: var(--ok); }
 .post.upd { border-left: 5px solid var(--accent, #2f6b4f); background: #f4f8f4; }
 .post.hid { opacity: .55; }
 .updates { margin-bottom: 1.2rem; }
+
+/* admin tabs */
+.tabs { display: flex; gap: .25rem; flex-wrap: wrap; border-bottom: 2px solid var(--line, #e3dacb); }
+.tab { background: none; border: 0; padding: .55rem .9rem; font: 700 .95rem var(--body, inherit); color: inherit; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+.tab.on { border-bottom-color: var(--hot, #2f6b4f); }
+#clubsel { font: 800 1.3rem var(--display, inherit); max-width: 100%; }

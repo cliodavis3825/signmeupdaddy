@@ -344,6 +344,10 @@ function viewMine() {
 }
 
 // ───────────────────────── Admin ─────────────────────────
+const slugify = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+const fWhen = (iso) => new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+const ROLE = { site: 'Site owner', owner: 'Club owner', organizer: 'Organizer' };
+
 async function viewAdmin(a) {
   const s = await a.session();
   if (!s) return loginStep(a);
@@ -353,56 +357,172 @@ async function viewAdmin(a) {
   startIdleTimer(a);
   const clubs = await a.myClubs();
   if (!clubs.length) {
-    $app.innerHTML = `<section class="panel"><h2>No clubs yet</h2><p>You're signed in as ${esc(s.user.email)}, but not an admin of any club. Run the <code>club_admins</code> insert from <code>supabase/schema.sql</code>.</p><button class="btn ghost" data-act="out">Sign out</button></section>`;
+    $app.innerHTML = `<section class="panel"><h2>No clubs yet</h2><p>You're signed in as ${esc(s.user.email)}, but you haven't been added to a club. Ask a club owner to add you from <strong>People &amp; settings</strong>.</p><button class="btn ghost" data-act="out">Sign out</button></section>`;
     $app.querySelector('[data-act=out]').onclick = async () => { await a.signOut(); route(); };
     return;
   }
-  const club = clubs.find((c) => c.id === CLUB) || clubs[0];
+  const club = clubs.find((c) => c.id === state.adminClub) || clubs.find((c) => c.id === CLUB) || clubs[0];
+  const isSite = clubs[0].role === 'site';
+  const canManage = club.role === 'site' || club.role === 'owner';
+  const tabs = [['events', 'Events'], ['list', 'Email list'], ...(canManage ? [['people', 'People & settings']] : []), ['activity', 'Activity'],
+    ...(isSite ? [['requests', 'New clubs'], ['reports', 'Issue reports']] : [])];
+  if (!tabs.some(([k]) => k === state.adminTab)) state.adminTab = 'events';
+
+  $app.innerHTML = `
+    <section class="admin">
+      <div class="admin-head"><div>
+        ${clubs.length > 1 ? `<select id="clubsel" aria-label="Club">${clubs.map((c) => `<option value="${esc(c.id)}"${c.id === club.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : `<h2>${esc(club.name)}</h2>`}
+        <p class="hint">${esc(s.user.email)} · ${ROLE[club.role] || 'Organizer'} ${a.mode === 'demo' ? '· <button class="link" data-act="reset">reset demo data</button>' : ''}</p></div>
+      <div><button class="btn ghost" data-act="out">Sign out</button> <button class="link" data-act="outall" title="Ends sessions on every device">Sign out everywhere</button></div></div>
+      <nav class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" class="tab${k === state.adminTab ? ' on' : ''}" data-tab="${k}" aria-selected="${k === state.adminTab}">${l}</button>`).join('')}</nav>
+      <div id="tab"></div>
+    </section>`;
+  $app.querySelector('#clubsel')?.addEventListener('change', (e) => { state.adminClub = e.target.value; viewAdmin(a); });
+  $app.querySelector('[data-act=out]').onclick = async () => { await a.signOut(); route(); };
+  $app.querySelector('[data-act=outall]').onclick = async () => { await a.signOut(true); toast('Signed out on all devices'); route(); };
+  $app.querySelector('[data-act=reset]')?.addEventListener('click', () => { a.resetDemo(); toast('Demo data reset'); route(); });
+  $app.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { state.adminTab = b.dataset.tab; viewAdmin(a); });
+  const el = $app.querySelector('#tab');
+  const tab = { events: eventsTab, list: listTab, people: peopleTab, activity: activityTab, requests: requestsTab, reports: reportsTab }[state.adminTab];
+  try { await tab(a, club, el, s); } catch (err) { el.innerHTML = `<p class="err">${esc(friendly(err))}</p>`; }
+}
+
+async function eventsTab(a, club, el) {
   const events = await a.adminEvents(club.id);
   const now = new Date();
   const upcoming = events.filter((e) => new Date(e.starts_at) >= now);
   const pastEv = events.filter((e) => new Date(e.starts_at) < now).reverse();
-
   const row = (e) => `<li><div><strong>${esc(e.title)}</strong>${e.published ? '' : ' <span class="status waitlist">draft</span>'}<br><span>${fDay(e.starts_at)} · ${fTime(e.starts_at)} · ${kind(e.kind).label}${e.capacity ? ` · cap ${e.capacity}` : ''}</span></div>
     <div class="row-acts"><button class="btn ghost sm" data-roster="${e.id}">Roster</button><button class="btn ghost sm" data-posts="${e.id}">Updates</button><button class="btn ghost sm" data-edit="${e.id}">Edit</button><button class="btn ghost sm" data-dup="${e.id}" title="Copy one week later">+1 wk</button></div></li>`;
-
-  $app.innerHTML = `
-    <section class="admin">
-      <div class="admin-head"><div><h2>${esc(club.name)}</h2><p class="hint">Signed in as ${esc(s.user.email)} ${a.mode === 'demo' ? '· <button class="link" data-act="reset">reset demo data</button>' : ''}</p></div>
-      <div><button class="btn primary" data-act="new">+ New event</button> <button class="btn ghost" data-act="out">Sign out</button> <button class="link" data-act="outall" title="Ends sessions on every device">Sign out everywhere</button></div></div>
-      <div id="editor"></div>
-      <p class="hint"><button class="link" data-act="subs">Email list: view &amp; download</button></p>
-      <h3>Upcoming (${upcoming.length})</h3><ul class="admin-list">${upcoming.map(row).join('') || '<li class="empty">No upcoming events.</li>'}</ul>
-      ${pastEv.length ? `<details><summary>Past (${pastEv.length})</summary><ul class="admin-list">${pastEv.map(row).join('')}</ul></details>` : ''}
-      <div class="embed-help panel">
-        <h3>Embed this calendar</h3>
-        <p class="hint">Paste on any site (the 518 Analog Club home page already has it):</p>
-        <textarea readonly rows="3">&lt;iframe src="${CONFIG.SITE_URL}/?club=${club.id}&amp;embed=1" style="width:100%;border:0;min-height:640px" title="${esc(club.name)} events" loading="lazy"&gt;&lt;/iframe&gt;</textarea>
-      </div>
-    </section>`;
-
+  el.innerHTML = `
+    <p><button class="btn primary" data-act="new">+ New event</button></p>
+    <div id="editor"></div>
+    <h3>Upcoming (${upcoming.length})</h3><ul class="admin-list">${upcoming.map(row).join('') || '<li class="empty">No upcoming events.</li>'}</ul>
+    ${pastEv.length ? `<details><summary>Past (${pastEv.length})</summary><ul class="admin-list">${pastEv.map(row).join('')}</ul></details>` : ''}
+    <div class="embed-help panel">
+      <h3>Embed this calendar</h3>
+      <p class="hint">Paste on any site (the 518 Analog Club home page already has it):</p>
+      <textarea readonly rows="3">&lt;iframe src="${CONFIG.SITE_URL}/?club=${club.id}&amp;embed=1" style="width:100%;border:0;min-height:640px" title="${esc(club.name)} events" loading="lazy"&gt;&lt;/iframe&gt;</textarea>
+    </div>`;
   const byId = Object.fromEntries(events.map((e) => [e.id, e]));
-  $app.querySelector('[data-act=new]').onclick = () => editor(a, club, null);
-  $app.querySelector('[data-act=out]').onclick = async () => { await a.signOut(); route(); };
-  $app.querySelector('[data-act=outall]').onclick = async () => { await a.signOut(true); toast('Signed out on all devices'); route(); };
-  $app.querySelector('[data-act=reset]')?.addEventListener('click', () => { a.resetDemo(); toast('Demo data reset'); route(); });
-  $app.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => editor(a, club, byId[b.dataset.edit]));
-  $app.querySelectorAll('[data-posts]').forEach((b) => b.onclick = () => eventPosts(a, club, byId[b.dataset.posts]));
-  $app.querySelector('[data-act=subs]').onclick = async () => {
-    const rows = await a.subscribers(club.id); const live = rows.filter((r) => r.status === 'active');
-    $app.querySelector('#editor').innerHTML = `<section class="panel"><div class="admin-head"><h3>Email list: ${live.length} confirmed, ${rows.filter((r) => r.status === 'pending').length} waiting to confirm, ${rows.filter((r) => r.status === 'unsubscribed').length} unsubscribed</h3>
-      <div class="row-acts"><button class="btn ghost sm" data-csv>Download CSV</button> <button class="btn ghost sm" data-x>Close</button></div></div>
-      <ul class="admin-list">${live.map((r) => `<li><div><strong>${esc(r.name || r.email)}</strong><br><span>${esc(r.email)}</span></div></li>`).join('') || '<li class="empty">No confirmed subscribers yet.</li>'}</ul></section>`;
-    const ed = $app.querySelector('#editor');
-    ed.querySelector('[data-x]').onclick = () => { ed.innerHTML = ''; };
-    ed.querySelector('[data-csv]').onclick = () => download(`${club.id}-email-list.csv`, toCsv(rows, ['email', 'name', 'status', 'created_at']), 'text/csv');
-  };
-  $app.querySelectorAll('[data-roster]').forEach((b) => b.onclick = () => roster(a, byId[b.dataset.roster]));
-  $app.querySelectorAll('[data-dup]').forEach((b) => b.onclick = () => {
+  el.querySelector('[data-act=new]').onclick = () => editor(a, club, null);
+  el.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => editor(a, club, byId[b.dataset.edit]));
+  el.querySelectorAll('[data-posts]').forEach((b) => b.onclick = () => eventPosts(a, club, byId[b.dataset.posts]));
+  el.querySelectorAll('[data-roster]').forEach((b) => b.onclick = () => roster(a, byId[b.dataset.roster]));
+  el.querySelectorAll('[data-dup]').forEach((b) => b.onclick = () => {
     const src = byId[b.dataset.dup]; const wk = 7 * 864e5;
-    const copy = { ...src, id: undefined, starts_at: new Date(new Date(src.starts_at).getTime() + wk).toISOString(), ends_at: src.ends_at ? new Date(new Date(src.ends_at).getTime() + wk).toISOString() : null };
-    editor(a, club, copy);
+    editor(a, club, { ...src, id: undefined, starts_at: new Date(new Date(src.starts_at).getTime() + wk).toISOString(), ends_at: src.ends_at ? new Date(new Date(src.ends_at).getTime() + wk).toISOString() : null });
   });
+}
+
+async function listTab(a, club, el) {
+  const rows = await a.subscribers(club.id);
+  const n = (st) => rows.filter((r) => r.status === st).length;
+  const f = state.listFilter || 'active';
+  const shown = rows.filter((r) => f === 'all' || r.status === f);
+  el.innerHTML = `
+    <section class="panel"><h3>${n('active')} confirmed · ${n('pending')} waiting to confirm · ${n('unsubscribed')} unsubscribed</h3>
+      <div class="row-acts" style="justify-content:flex-start"><select id="lf" aria-label="Show">${[['active', 'Confirmed'], ['pending', 'Waiting to confirm'], ['unsubscribed', 'Unsubscribed'], ['all', 'Everyone']].map(([k, l]) => `<option value="${k}"${k === f ? ' selected' : ''}>${l}</option>`).join('')}</select>
+      <button class="btn ghost sm" data-csv>Download CSV</button></div>
+      <ul class="admin-list">${shown.map((r, i) => `<li><div><strong>${esc(r.name || r.email)}</strong> <span class="status ${r.status === 'active' ? '' : 'waitlist'}">${r.status}</span><br><span>${esc(r.email)}</span></div>
+        <div class="row-acts">${r.status === 'active' ? `<button class="btn ghost sm" data-unsub="${i}">Unsubscribe</button>` : ''}<button class="btn ghost sm" data-rm="${i}">Remove</button></div></li>`).join('') || '<li class="empty">Nobody here yet.</li>'}</ul>
+    </section>
+    <section class="panel"><h3>Invite people</h3>
+      <p class="hint">Paste emails (commas, spaces or new lines; up to 50). Each person gets a confirmation email and only joins the list when they tap it.</p>
+      <textarea id="inv" rows="3" placeholder="pat@example.com, sam@example.com"></textarea>
+      <p><button class="btn primary" data-inv>Send invitations</button></p><p class="hint" id="invmsg"></p>
+    </section>
+    <p class="hint">To email the list about an event, open it under <strong>Events → Updates</strong>.</p>`;
+  el.querySelector('#lf').onchange = (e) => { state.listFilter = e.target.value; viewAdmin(a); };
+  el.querySelector('[data-csv]').onclick = () => download(`${club.id}-email-list.csv`, toCsv(rows, ['email', 'name', 'status', 'created_at']), 'text/csv');
+  el.querySelectorAll('[data-unsub]').forEach((b) => b.onclick = async () => { await a.setSubStatus(club.id, shown[b.dataset.unsub].email, 'unsubscribed'); toast('Unsubscribed'); viewAdmin(a); });
+  el.querySelectorAll('[data-rm]').forEach((b) => b.onclick = async () => {
+    if (!await ask(`Remove ${shown[b.dataset.rm].email} from the list entirely?`, 'Remove')) return;
+    await a.removeSub(club.id, shown[b.dataset.rm].email); toast('Removed'); viewAdmin(a);
+  });
+  el.querySelector('[data-inv]').onclick = async (ev) => {
+    const emails = el.querySelector('#inv').value.split(/[\s,;]+/).filter(Boolean);
+    if (!emails.length) return;
+    ev.target.disabled = true; const msg = el.querySelector('#invmsg'); msg.textContent = 'Sending…';
+    try { const r = await a.admin({ action: 'invite_to_list', club_id: club.id, emails }); msg.textContent = `Sent ${r.sent} invitation${r.sent === 1 ? '' : 's'}${r.skipped ? ` (${r.skipped} skipped: already on the list or invalid)` : ''}.`; el.querySelector('#inv').value = ''; }
+    catch (err) { msg.textContent = friendly(err); } finally { ev.target.disabled = false; }
+  };
+}
+
+async function peopleTab(a, club, el, s) {
+  const [team, cs] = await Promise.all([a.team(club.id), a.clubSettings(club.id)]);
+  const owners = team.filter((t) => t.role === 'owner').length;
+  el.innerHTML = `
+    <section class="panel"><h3>Who can manage ${esc(club.name)}</h3>
+      <ul class="admin-list">${team.map((t) => `<li><div><strong>${esc(t.email || 'Organizer')}</strong> <span class="status ${t.role === 'owner' ? '' : 'waitlist'}">${t.role}</span></div>
+        <div class="row-acts"><button class="btn ghost sm" data-role="${esc(t.user_id)}" data-to="${t.role === 'owner' ? 'organizer' : 'owner'}">Make ${t.role === 'owner' ? 'organizer' : 'owner'}</button><button class="btn ghost sm" data-revoke="${esc(t.user_id)}">Remove</button></div></li>`).join('') || '<li class="empty">Nobody yet.</li>'}</ul>
+      <p class="hint"><strong>Owners</strong> manage people and club settings. <strong>Organizers</strong> run events, the email list and comments.</p>
+      <h4>Add someone</h4>
+      <div class="row-acts" style="justify-content:flex-start"><input id="gemail" type="email" placeholder="their@email.com" autocomplete="off"><select id="grole"><option value="organizer">Organizer</option><option value="owner">Owner</option></select><button class="btn primary" data-grant>Add &amp; email them</button></div>
+      <p class="hint" id="gmsg">They get an email with sign-in steps (email code, then an authenticator app).</p>
+    </section>
+    <section class="panel"><h3>Club settings</h3>
+      <form id="cs" class="form"><label>Name<input name="name" required maxlength="80" value="${esc(cs.name)}"></label>
+      <label>Tagline<input name="tagline" maxlength="140" value="${esc(cs.tagline || '')}"></label>
+      <label>Reply-to email (optional)<input name="contact_email" type="email" maxlength="120" value="${esc(cs.contact_email || '')}"></label>
+      <label>Accent color<input name="accent" type="color" value="${esc(cs.accent || '#2f6b4f')}"></label>
+      <p><button class="btn primary">Save settings</button></p></form>
+    </section>`;
+  const refresh = () => viewAdmin(a);
+  const run = async (fn, ok) => { try { await fn(); toast(ok); refresh(); } catch (err) { toast(friendly(err)); } };
+  el.querySelectorAll('[data-role]').forEach((b) => b.onclick = async () => {
+    if (b.dataset.to === 'organizer' && owners < 2 && club.role !== 'site') return toast(friendly('LAST_OWNER'));
+    if (!await ask(`Make this person ${b.dataset.to === 'owner' ? 'an owner' : 'an organizer'}?`, 'Yes')) return;
+    run(() => a.setRole(club.id, b.dataset.role, b.dataset.to), 'Role updated');
+  });
+  el.querySelectorAll('[data-revoke]').forEach((b) => b.onclick = async () => {
+    if (!await ask('Remove this person\'s access to the club?', 'Remove')) return;
+    run(() => a.admin({ action: 'revoke', club_id: club.id, user_id: b.dataset.revoke }), 'Access removed');
+  });
+  el.querySelector('[data-grant]').onclick = async (ev) => {
+    const email = el.querySelector('#gemail').value.trim(); if (!email) return;
+    ev.target.disabled = true;
+    try { const r = await a.admin({ action: 'grant', club_id: club.id, email, role: el.querySelector('#grole').value }); toast(r.mailed ? 'Added — they were emailed' : 'Added, but the email failed. Tell them to sign in.'); refresh(); }
+    catch (err) { el.querySelector('#gmsg').textContent = friendly(err); ev.target.disabled = false; }
+  };
+  el.querySelector('#cs').onsubmit = (ev) => {
+    ev.preventDefault(); const f = new FormData(ev.target);
+    run(() => a.updateClub(club.id, { name: f.get('name').trim(), tagline: f.get('tagline').trim() || null, contact_email: f.get('contact_email').trim() || null, accent: f.get('accent') }), 'Saved');
+  };
+}
+
+async function activityTab(a, club, el) {
+  const rows = await a.audit(club.id);
+  const what = { INVITE_LIST: 'Invited people to the email list', GRANT: 'Added a teammate', REVOKE: 'Removed a teammate', APPROVE_CLUB: 'Approved the club', INSERT: 'Created', UPDATE: 'Changed', DELETE: 'Deleted' };
+  const tbl = { events: 'an event', signups: 'a signup', club_admins: '', };
+  const detail = (c) => { try { const t = JSON.stringify(c ?? {}); return t.length > 140 ? t.slice(0, 140) + '…' : t; } catch { return ''; } };
+  el.innerHTML = `<section class="panel"><h3>Recent activity</h3><ul class="admin-list">${rows.map((r) => `<li><div><strong>${esc(what[r.action] || r.action)} ${esc(tbl[r.tbl] ?? '')}</strong><br><span>${esc(fWhen(r.at))} · ${esc(detail(r.changes))}</span></div></li>`).join('') || '<li class="empty">Nothing yet.</li>'}</ul><p class="hint">Last 100 changes to this club's events, signups and team.</p></section>`;
+}
+
+async function requestsTab(a, club, el) {
+  const rows = await a.requests();
+  el.innerHTML = `<section class="panel"><h3>New club requests</h3><ul class="admin-list">${rows.map((r) => `<li><div><strong>${esc(r.club_name)}</strong> <span class="status ${r.status === 'approved' ? '' : 'waitlist'}">${r.status}</span><br>
+    <span>${esc(r.contact)} · <a href="mailto:${esc(r.email)}">${esc(r.email)}</a>${r.place ? ' · ' + esc(r.place) : ''} · ${esc(fWhen(r.created_at))}</span>${r.about ? `<br><span>${esc(r.about)}</span>` : ''}</div>
+    ${r.status === 'new' ? `<div class="row-acts"><input data-slug="${r.id}" value="${esc(slugify(r.club_name))}" aria-label="Web address" size="16"><button class="btn primary sm" data-ok="${r.id}">Approve</button><button class="btn ghost sm" data-no="${r.id}">Decline</button></div>` : ''}</li>`).join('') || '<li class="empty">No requests.</li>'}</ul>
+    <p class="hint">Approving creates the club at signmeupdaddy.com/?club=<em>web-address</em>, makes the requester its owner, and emails them sign-in steps.</p></section>`;
+  el.querySelectorAll('[data-ok]').forEach((b) => b.onclick = async () => {
+    const slug = el.querySelector(`[data-slug="${b.dataset.ok}"]`).value.trim().toLowerCase();
+    b.disabled = true;
+    try { const r = await a.admin({ action: 'approve_request', request_id: b.dataset.ok, club_id: slug }); toast(r.mailed ? 'Approved — owner emailed' : 'Approved, but the email failed'); viewAdmin(a); }
+    catch (err) { toast(friendly(err)); b.disabled = false; }
+  });
+  el.querySelectorAll('[data-no]').forEach((b) => b.onclick = async () => {
+    if (!await ask('Decline this request? (No email is sent.)', 'Decline')) return;
+    await a.setRequestStatus(b.dataset.no, 'declined'); viewAdmin(a);
+  });
+}
+
+async function reportsTab(a, club, el) {
+  const rows = await a.reports();
+  el.innerHTML = `<section class="panel"><h3>Issue reports</h3><ul class="admin-list">${rows.map((r) => `<li><div><strong>${esc(r.topic)}</strong> <span class="status ${r.status === 'handled' ? '' : 'waitlist'}">${r.status}</span><br>
+    <span>${esc(r.name)} · <a href="mailto:${esc(r.email)}?subject=${encodeURIComponent('Re: ' + r.topic)}">${esc(r.email)}</a> · ${esc(fWhen(r.created_at))}${r.club_id ? ' · ' + esc(r.club_id) : ''}</span><br>${esc(r.what)}${r.expected ? `<br><em>Expected:</em> ${esc(r.expected)}` : ''}${r.page || r.device ? `<br><span class="hint">${esc(r.page || '')} ${esc(r.device || '')}</span>` : ''}</div>
+    <div class="row-acts"><button class="btn ghost sm" data-flip="${r.id}" data-to="${r.status === 'new' ? 'handled' : 'new'}">${r.status === 'new' ? 'Mark handled' : 'Reopen'}</button></div></li>`).join('') || '<li class="empty">No reports.</li>'}</ul></section>`;
+  el.querySelectorAll('[data-flip]').forEach((b) => b.onclick = async () => { await a.setReportStatus(b.dataset.flip, b.dataset.to); viewAdmin(a); });
 }
 
 
