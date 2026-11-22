@@ -25,6 +25,8 @@ export function friendly(err) {
   return code ? ERRORS[code] : msg;
 }
 
+// Public club fields only (contact_email is not readable by anonymous visitors).
+const CLUB_COLS = 'id, name, tagline, accent, timezone, created_at';
 const isLive = Boolean(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY);
 
 // ───────────── Supabase backend ─────────────
@@ -39,7 +41,7 @@ async function liveApi() {
   const q = async (p) => { const { data, error } = await p; if (error) throw new Error(error.message); return data; };
   return {
     mode: 'live',
-    getClub: (id) => q(sb.from('clubs').select('*').eq('id', id).maybeSingle()),
+    getClub: (id) => q(sb.from('clubs').select(CLUB_COLS).eq('id', id).maybeSingle()),
     listEvents: (club, from, to) => rpc('list_events', { p_club: club, p_from: from.toISOString(), p_to: to.toISOString() }),
     // Public signups go through the `signup` Edge Function (CAPTCHA, rate limit), never the RPC directly.
     signUp: async (eventId, f) => {
@@ -81,7 +83,7 @@ async function liveApi() {
     mfaVerify: (factorId, code) => q(sb.auth.mfa.challengeAndVerify({ factorId, code })),
     signOut: (everywhere) => sb.auth.signOut({ scope: everywhere ? 'global' : 'local' }),
     myClubs: async () => {
-      const rows = await q(sb.from('club_admins').select('club_id, clubs(*)'));
+      const rows = await q(sb.from('club_admins').select(`club_id, clubs(${CLUB_COLS})`));
       return rows.map((r) => r.clubs);
     },
     adminEvents: (club) => q(sb.from('events').select('*').eq('club_id', club).order('starts_at')),
