@@ -21,7 +21,10 @@ Deno.serve(async (req) => {
   if (!e || !e.published) return reply(404, { error: 'EVENT_NOT_FOUND' });
   if (new Date(e.starts_at).getTime() < Date.now() - 30 * 864e5) return reply(409, { error: 'EVENT_PAST' });
 
-  const { error } = await db.from('event_posts').insert({ event_id, kind: 'comment', author_name: name, body });
+  // Public pages show "First L." only, so that is all we keep for the public author name.
+  const w = name.split(/\s+/).filter(Boolean);
+  const shown = w.length > 1 ? `${w[0].slice(0, 30)} ${w[w.length - 1][0].toUpperCase()}.` : (w[0] ?? 'Guest').slice(0, 30);
+  const { error } = await db.from('event_posts').insert({ event_id, kind: 'comment', author_name: shown, body });
   if (error) return reply(500, { error: 'SERVER' });
   return reply(200, { ok: true });
 });

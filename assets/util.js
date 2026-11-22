@@ -151,3 +151,10 @@ export function printHtml(html) {
   try { window.print(); } catch { /* blocked in sandbox */ }
   setTimeout(done, 60000);
 }
+
+// Public pages show first name + last initial only ("Mary Smith" → "Mary S.").
+export function shortName(full) {
+  const w = String(full || '').trim().split(/\s+/).filter(Boolean);
+  if (!w.length) return 'Guest';
+  return w.length === 1 ? w[0].slice(0, 30) : `${w[0].slice(0, 30)} ${w[w.length - 1][0].toUpperCase()}.`;
+}
