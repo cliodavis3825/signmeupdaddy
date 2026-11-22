@@ -50,11 +50,13 @@ async function route() {
   document.body.dataset.mode = a.mode;
   const banner = document.getElementById('demo-banner'); if (banner) banner.hidden = a.mode !== 'demo';
   await loadClub(a);
-  const [, view, arg] = (location.hash.slice(1) || '/').split('/');
+  const [, view, arg, arg2] = (location.hash.slice(1) || '/').split('/');
   try {
     if (view === 'e') await viewEvent(a, arg);
     else if (view === 'cancel') await viewCancel(a, arg);
     else if (view === 'mine') viewMine();
+    else if (view === 'subscribe') viewSubscribe(a);
+    else if (view === 'list') await viewList(a, arg, arg2);
     else if (view === 'admin') await viewAdmin(a);
     else await viewCalendar(a);
   } catch (err) {
@@ -124,7 +126,9 @@ function renderCalendar() {
       </div>
       <div id="follow"></div>
       ${list.length ? list.map(card).join('') : `<p class="empty">${state.day ? 'Nothing on this day.' : 'No upcoming events this stretch — check next month.'}</p>`}
-    </section>`;
+    </section>
+    ${EMBED ? '' : '<section class="panel subbox" id="subbox"></section>'}`;
+  if (!EMBED) api().then((a) => subscribeBox(a, $app.querySelector('#subbox')));
 
   $app.querySelector('[data-act=prev]').onclick = () => { state.month.setMonth(state.month.getMonth() - 1); state.day = null; route(); };
   $app.querySelector('[data-act=next]').onclick = () => { state.month.setMonth(state.month.getMonth() + 1); state.day = null; route(); };
@@ -253,7 +257,9 @@ async function viewEvent(a, id) {
         <button class="btn primary" type="submit">${full ? 'Join waitlist' : 'Sign me up'}</button>
         <p class="err" role="alert"></p>
       </form>`}
-    </section>`;
+    </section>
+    <section class="panel posts" id="posts"><p class="hint">Loading updates…</p></section>`;
+  postsPanel(a, e);
 
   $app.querySelector('img.cover')?.addEventListener('error', (x) => x.target.remove());
   $app.querySelector('[data-act=ics]').onclick = () => downloadIcs(e, eventUrl(e.id));
@@ -357,13 +363,14 @@ async function viewAdmin(a) {
   const pastEv = events.filter((e) => new Date(e.starts_at) < now).reverse();
 
   const row = (e) => `<li><div><strong>${esc(e.title)}</strong>${e.published ? '' : ' <span class="status waitlist">draft</span>'}<br><span>${fDay(e.starts_at)} · ${fTime(e.starts_at)} · ${kind(e.kind).label}${e.capacity ? ` · cap ${e.capacity}` : ''}</span></div>
-    <div class="row-acts"><button class="btn ghost sm" data-roster="${e.id}">Roster</button><button class="btn ghost sm" data-edit="${e.id}">Edit</button><button class="btn ghost sm" data-dup="${e.id}" title="Copy one week later">+1 wk</button></div></li>`;
+    <div class="row-acts"><button class="btn ghost sm" data-roster="${e.id}">Roster</button><button class="btn ghost sm" data-posts="${e.id}">Updates</button><button class="btn ghost sm" data-edit="${e.id}">Edit</button><button class="btn ghost sm" data-dup="${e.id}" title="Copy one week later">+1 wk</button></div></li>`;
 
   $app.innerHTML = `
     <section class="admin">
       <div class="admin-head"><div><h2>${esc(club.name)}</h2><p class="hint">Signed in as ${esc(s.user.email)} ${a.mode === 'demo' ? '· <button class="link" data-act="reset">reset demo data</button>' : ''}</p></div>
       <div><button class="btn primary" data-act="new">+ New event</button> <button class="btn ghost" data-act="out">Sign out</button> <button class="link" data-act="outall" title="Ends sessions on every device">Sign out everywhere</button></div></div>
       <div id="editor"></div>
+      <p class="hint"><button class="link" data-act="subs">Email list: view &amp; download</button></p>
       <h3>Upcoming (${upcoming.length})</h3><ul class="admin-list">${upcoming.map(row).join('') || '<li class="empty">No upcoming events.</li>'}</ul>
       ${pastEv.length ? `<details><summary>Past (${pastEv.length})</summary><ul class="admin-list">${pastEv.map(row).join('')}</ul></details>` : ''}
       <div class="embed-help panel">
@@ -379,6 +386,16 @@ async function viewAdmin(a) {
   $app.querySelector('[data-act=outall]').onclick = async () => { await a.signOut(true); toast('Signed out on all devices'); route(); };
   $app.querySelector('[data-act=reset]')?.addEventListener('click', () => { a.resetDemo(); toast('Demo data reset'); route(); });
   $app.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => editor(a, club, byId[b.dataset.edit]));
+  $app.querySelectorAll('[data-posts]').forEach((b) => b.onclick = () => eventPosts(a, club, byId[b.dataset.posts]));
+  $app.querySelector('[data-act=subs]').onclick = async () => {
+    const rows = await a.subscribers(club.id); const live = rows.filter((r) => r.status === 'active');
+    $app.querySelector('#editor').innerHTML = `<section class="panel"><div class="admin-head"><h3>Email list: ${live.length} confirmed, ${rows.filter((r) => r.status === 'pending').length} waiting to confirm, ${rows.filter((r) => r.status === 'unsubscribed').length} unsubscribed</h3>
+      <div class="row-acts"><button class="btn ghost sm" data-csv>Download CSV</button> <button class="btn ghost sm" data-x>Close</button></div></div>
+      <ul class="admin-list">${live.map((r) => `<li><div><strong>${esc(r.name || r.email)}</strong><br><span>${esc(r.email)}</span></div></li>`).join('') || '<li class="empty">No confirmed subscribers yet.</li>'}</ul></section>`;
+    const ed = $app.querySelector('#editor');
+    ed.querySelector('[data-x]').onclick = () => { ed.innerHTML = ''; };
+    ed.querySelector('[data-csv]').onclick = () => download(`${club.id}-email-list.csv`, toCsv(rows, ['email', 'name', 'status', 'created_at']), 'text/csv');
+  };
   $app.querySelectorAll('[data-roster]').forEach((b) => b.onclick = () => roster(a, byId[b.dataset.roster]));
   $app.querySelectorAll('[data-dup]').forEach((b) => b.onclick = () => {
     const src = byId[b.dataset.dup]; const wk = 7 * 864e5;
@@ -387,6 +404,147 @@ async function viewAdmin(a) {
   });
 }
 
+
+
+// ───────────────────────── Email list ─────────────────────────
+// Double opt-in: the form asks the `subscribe` function to send a confirmation email; the link in it lands on #/list/confirm/<token>.
+function subscribeBox(a, el) {
+  if (!el) return;
+  el.innerHTML = `
+    <h3>Get event emails</h3>
+    <p class="hint">New nights from ${esc(state.club.name)} in your inbox. No spam, and every email has an unsubscribe link.</p>
+    <form id="sf" novalidate>
+      <div class="two">
+        <label>Name <span class="opt">(optional)</span><input name="name" maxlength="80" autocomplete="name"></label>
+        <label>Email<input name="email" type="email" required maxlength="120" autocomplete="email"></label>
+      </div>
+      <label class="hp" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+      <div class="cf"></div>
+      <button class="btn primary" type="submit">Keep me posted</button>
+      <p class="err" role="alert"></p>
+    </form>`;
+  const f = el.querySelector('#sf'); const shownAt = Date.now();
+  const capP = captcha(f.querySelector('.cf'), CONFIG.TURNSTILE_SITE_KEY, 'subscribe'); capP.catch(() => {});
+  f.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const d = Object.fromEntries(new FormData(f)); const err = f.querySelector('.err'); err.textContent = '';
+    if (d.website) return;
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email)) return (err.textContent = 'That email looks off.');
+    const btn = f.querySelector('button'); btn.disabled = true; btn.textContent = 'Sending…';
+    try {
+      const cap = await capP; const token = await cap.wait();
+      if (!token) throw new Error('CAPTCHA_FAILED');
+      await a.subscribe(CLUB, { name: d.name, email: d.email, captcha: token, elapsed_ms: Date.now() - shownAt });
+      el.innerHTML = `<h3>Check your email</h3><p>We sent a confirmation link to <strong>${esc(d.email)}</strong>. Tap it to finish joining the list. (Check spam if it doesn't show up in a minute or two.)</p>`;
+    } catch (x) {
+      err.textContent = friendly(x); btn.disabled = false; btn.textContent = 'Keep me posted'; (await capP.catch(() => null))?.reset();
+    }
+    postHeight();
+  };
+}
+function viewSubscribe(a) {
+  $app.innerHTML = '<section class="panel subbox" id="subbox"></section>';
+  subscribeBox(a, $app.querySelector('#subbox'));
+}
+async function viewList(a, action, token) {
+  let name = null, ok = true;
+  try { name = action === 'unsub' ? await a.unsubscribe(token) : await a.confirmSub(token); } catch { ok = false; }
+  const club = esc(name || state.club.name);
+  $app.innerHTML = `<section class="panel narrow">${!ok || !name
+    ? '<h2>That link didn\'t work</h2><p>It may have expired or already been used. Try joining the list again from the calendar.</p>'
+    : action === 'unsub'
+      ? `<h2>You're unsubscribed</h2><p>You won't get any more emails from ${club}. Changed your mind? You can rejoin any time from the calendar.</p>`
+      : `<h2>You're on the list</h2><p>Thanks! You'll hear from ${club} when new events go up.</p>`}
+    <a class="btn" href="#/">See the calendar</a></section>`;
+}
+
+// ───────────────────────── Event updates & comments ─────────────────────────
+const fPost = (iso) => `${fDay(iso)}, ${fTime(iso)}`;
+async function postsPanel(a, e) {
+  const box = $app.querySelector('#posts'); if (!box) return;
+  let posts = [];
+  try { posts = await a.listPosts(e.id); } catch { /* show the form anyway */ }
+  const updates = posts.filter((p) => p.kind === 'update').reverse();
+  const comments = posts.filter((p) => p.kind === 'comment');
+  box.innerHTML = `
+    ${updates.length ? `<div class="updates"><h3>Updates from the organizers</h3>${updates.map((p) => `<div class="post upd"><p>${esc(p.body).replace(/\n/g, '<br>')}</p><small>${fPost(p.created_at)}</small></div>`).join('')}</div>` : ''}
+    <h3>Comments &amp; questions${comments.length ? ` (${comments.length})` : ''}</h3>
+    ${comments.map((p) => `<div class="post"><strong>${esc(p.author_name)}</strong> <small>${fPost(p.created_at)}</small><p>${esc(p.body).replace(/\n/g, '<br>')}</p></div>`).join('') || '<p class="hint">No comments yet. Ask a question or say hi.</p>'}
+    <form id="cf2" novalidate>
+      <label>Your name<input name="name" required maxlength="60" autocomplete="name"></label>
+      <label>Comment<textarea name="body" required maxlength="1000" rows="3"></textarea></label>
+      <label class="hp" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+      <div class="cf"></div>
+      <button class="btn primary" type="submit">Post comment</button>
+      <p class="err" role="alert"></p>
+    </form>`;
+  const f = box.querySelector('#cf2'); const shownAt = Date.now();
+  const capP = captcha(f.querySelector('.cf'), CONFIG.TURNSTILE_SITE_KEY, 'comment'); capP.catch(() => {});
+  f.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const d = Object.fromEntries(new FormData(f)); const err = f.querySelector('.err'); err.textContent = '';
+    if (d.website) return;
+    if (!d.name.trim()) return (err.textContent = 'Add your name.');
+    if (!d.body.trim()) return (err.textContent = 'Write a comment first.');
+    const btn = f.querySelector('button'); btn.disabled = true; btn.textContent = 'Posting…';
+    try {
+      const cap = await capP; const token = await cap.wait();
+      if (!token) throw new Error('CAPTCHA_FAILED');
+      await a.postComment(e.id, { name: d.name, body: d.body, captcha: token, elapsed_ms: Date.now() - shownAt });
+      await postsPanel(a, e); postHeight();
+    } catch (x) {
+      err.textContent = friendly(x); btn.disabled = false; btn.textContent = 'Post comment'; (await capP.catch(() => null))?.reset();
+    }
+  };
+  postHeight();
+}
+
+// Organizer: post an update (optionally emailed to everyone signed up), email the list about the event, moderate comments.
+async function eventPosts(a, club, e) {
+  const box = $app.querySelector('#editor');
+  const posts = await a.adminPosts(e.id);
+  box.innerHTML = `
+    <section class="panel">
+      <div class="admin-head"><div><h3>${esc(e.title)}: updates &amp; comments</h3><p class="hint">${fDay(e.starts_at)} · ${fTime(e.starts_at)}</p></div>
+        <div class="row-acts"><button class="btn ghost sm" data-act="announce">Email the list about this event</button> <button class="btn ghost sm" data-act="close">Close</button></div></div>
+      <form id="uf">
+        <label>Post an update <span class="opt">(room change, what to bring…)</span><textarea name="body" rows="3" maxlength="2000" required></textarea></label>
+        <label class="check"><input type="checkbox" name="mail" checked> Also email everyone signed up (including the waitlist)</label>
+        <button class="btn primary" type="submit">Post update</button> <span class="err" role="alert"></span>
+      </form>
+      <h4>Posts (${posts.length})</h4>
+      ${posts.map((p) => `<div class="post ${p.kind === 'update' ? 'upd' : ''}${p.hidden ? ' hid' : ''}">
+        <strong>${p.kind === 'update' ? 'Update' : esc(p.author_name)}</strong> <small>${fPost(p.created_at)}${p.emailed_at ? ' · emailed' : ''}${p.hidden ? ' · hidden' : ''}</small>
+        <p>${esc(p.body).replace(/\n/g, '<br>')}</p>
+        <div class="row-acts">${p.kind === 'comment' ? `<button class="btn ghost sm" data-hide="${p.id}" data-to="${p.hidden ? 0 : 1}">${p.hidden ? 'Show' : 'Hide'}</button>` : (!p.emailed_at && !p.hidden ? `<button class="btn ghost sm" data-mail="${p.id}">Email it</button>` : '')}
+        <button class="btn ghost sm" data-del="${p.id}">Delete</button></div></div>`).join('') || '<p class="hint">Nothing yet.</p>'}
+    </section>`;
+  box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const again = () => eventPosts(a, club, e);
+  const send = async (body, what) => {
+    try { const r = await a.notify(body); toast(r.sent ? `Emailed ${r.sent} ${r.sent === 1 ? 'person' : 'people'}` : `Nobody to email yet (${what})`); } catch (x) { toast(friendly(x)); }
+  };
+  box.querySelector('[data-act=close]').onclick = () => { box.innerHTML = ''; };
+  box.querySelector('[data-act=announce]').onclick = async () => {
+    if (!(await ask(`Email everyone on the ${club.name} list about "${e.title}"?`, 'Send'))) return;
+    await send({ kind: 'announce', event_id: e.id }, 'no confirmed subscribers');
+  };
+  const f = box.querySelector('#uf');
+  f.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const d = new FormData(f); const body = String(d.get('body') || '').trim(); if (!body) return;
+    const btn = f.querySelector('button'); btn.disabled = true;
+    try {
+      const post = await a.addUpdate(e.id, body);
+      if (d.get('mail')) await send({ kind: 'update', post_id: post.id }, 'no signups');
+      else toast('Update posted');
+      again();
+    } catch (x) { f.querySelector('.err').textContent = friendly(x); btn.disabled = false; }
+  };
+  box.querySelectorAll('[data-hide]').forEach((b) => b.onclick = async () => { await a.setHidden(Number(b.dataset.hide) || b.dataset.hide, b.dataset.to === '1'); again(); });
+  box.querySelectorAll('[data-mail]').forEach((b) => b.onclick = async () => { await send({ kind: 'update', post_id: Number(b.dataset.mail) || b.dataset.mail }, 'no signups'); again(); });
+  box.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => { if (await ask('Delete this post for good?', 'Delete')) { await a.deletePost(Number(b.dataset.del) || b.dataset.del); again(); } });
+}
 
 // ───────────────────────── Organizer auth ─────────────────────────
 // Step 1: email + CAPTCHA → Supabase emails a 6-digit code (and a link, for convenience).

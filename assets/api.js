@@ -12,7 +12,12 @@ export const ERRORS = {
   BOT_SUSPECTED: "That was a little too fast for a human. Give it a second and try again.",
   CAPTCHA_FAILED: "We couldn't confirm you're human. Refresh the page and try again.",
   CAPTCHA_LOAD: "The human-check didn't load. Turn off content blockers for this page, or try another browser.",
-  RATE_LIMITED: 'Too many signups from your connection. Try again in an hour.',
+  RATE_LIMITED: 'Too many tries from your connection. Please wait a while and try again.',
+  TOO_SOON: 'You emailed the list about this event less than an hour ago. Try again later.',
+  ALREADY_SENT: 'That update was already emailed.',
+  NOT_PUBLISHED: 'Publish the event before emailing the list.',
+  MAIL_FAILED: "The email service didn't accept that. Nothing was marked as sent; try again in a minute.",
+  MAIL_NOT_CONFIGURED: 'Email sending is not set up yet.',
   BAD_ORIGIN: 'Signups only work from signmeupdaddy.com.',
   'Token has expired or is invalid': 'That code is wrong or expired. Request a new one.',
   'Invalid TOTP code': "That authenticator code didn't match. Check your app's clock and try again.",
@@ -39,20 +44,27 @@ async function liveApi() {
     return data;
   };
   const q = async (p) => { const { data, error } = await p; if (error) throw new Error(error.message); return data; };
+  const fnCall = async (name, body) => {
+    const { data, error } = await sb.functions.invoke(name, { body });
+    if (error) {
+      let code = 'SERVER';
+      try { code = (await error.context.json()).error || code; } catch { /* network error */ }
+      throw new Error(code);
+    }
+    return data;
+  };
   return {
     mode: 'live',
     getClub: (id) => q(sb.from('clubs').select(CLUB_COLS).eq('id', id).maybeSingle()),
     listEvents: (club, from, to) => rpc('list_events', { p_club: club, p_from: from.toISOString(), p_to: to.toISOString() }),
     // Public signups go through the `signup` Edge Function (CAPTCHA, rate limit), never the RPC directly.
-    signUp: async (eventId, f) => {
-      const { data, error } = await sb.functions.invoke('signup', { body: { event_id: eventId, ...f } });
-      if (error) {
-        let code = 'SERVER';
-        try { code = (await error.context.json()).error || code; } catch { /* network error */ }
-        throw new Error(code);
-      }
-      return data;
-    },
+    signUp: (eventId, f) => fnCall('signup', { event_id: eventId, ...f }),
+    // Event page posts, email list (double opt-in: the link in the confirmation email calls confirmSub).
+    listPosts: (eventId) => rpc('list_event_posts', { p_event: eventId }),
+    postComment: (eventId, f) => fnCall('post-comment', { event_id: eventId, ...f }),
+    subscribe: (club, f) => fnCall('subscribe', { club_id: club, ...f }),
+    confirmSub: (token) => rpc('confirm_subscription', { p_token: token }),
+    unsubscribe: (token) => rpc('unsubscribe', { p_token: token }),
     lookup: async (token) => (await rpc('lookup_signup', { p_token: token }))[0] || null,
     cancel: (token) => rpc('cancel_signup', { p_token: token }),
     // admin
@@ -93,6 +105,13 @@ async function liveApi() {
     deleteEvent: (id) => q(sb.from('events').delete().eq('id', id)),
     roster: (eventId) => q(sb.from('signups').select('*').eq('event_id', eventId).order('created_at')),
     adminCancel: (signupId) => rpc('admin_cancel', { p_signup: signupId }),
+    // organizer: event updates + comment moderation + email list
+    adminPosts: (eventId) => q(sb.from('event_posts').select('*').eq('event_id', eventId).order('created_at', { ascending: false })),
+    addUpdate: (eventId, body) => q(sb.from('event_posts').insert({ event_id: eventId, kind: 'update', author_name: 'Organizer', body }).select().single()),
+    setHidden: (id, hidden) => q(sb.from('event_posts').update({ hidden }).eq('id', id)),
+    deletePost: (id) => q(sb.from('event_posts').delete().eq('id', id)),
+    subscribers: (club) => q(sb.from('subscribers').select('email, name, status, created_at').eq('club_id', club).order('created_at')),
+    notify: (body) => fnCall('notify', body),
     setTables: async (byId) => { for (const [id, no] of Object.entries(byId)) await q(sb.from('signups').update({ table_no: no }).eq('id', id)); },
     checkIn: (id, on) => q(sb.from('signups').update({ checked_in_at: on ? new Date().toISOString() : null }).eq('id', id)),
     // Past confirmed signups for this club → per-email show/no-show record (admins only, via RLS).
@@ -193,6 +212,20 @@ function demoApi() {
       const s = db().signups.find((x) => x.cancel_token === token) || fail('SIGNUP_NOT_FOUND');
       s.status = 'cancelled'; promote(s.event_id); save(); return 'cancelled';
     },
+    listPosts: async (eventId) => (db().posts ||= []).filter((p) => p.event_id === eventId && !p.hidden),
+    postComment: async (eventId, f) => {
+      if (f.website || !(f.elapsed_ms >= 3000)) fail('BOT_SUSPECTED');
+      (db().posts ||= []).push({ id: uid(), event_id: eventId, kind: 'comment', author_name: f.name.trim(), body: f.body.trim(), hidden: false, created_at: new Date().toISOString() }); save();
+    },
+    subscribe: async () => { /* demo: nothing is emailed */ },
+    confirmSub: async () => '518 Analog Club',
+    unsubscribe: async () => '518 Analog Club',
+    adminPosts: async (eventId) => (db().posts ||= []).filter((p) => p.event_id === eventId).sort((a, b) => b.created_at.localeCompare(a.created_at)),
+    addUpdate: async (eventId, body) => { const p = { id: uid(), event_id: eventId, kind: 'update', author_name: 'Organizer', body, hidden: false, emailed_at: null, created_at: new Date().toISOString() }; (db().posts ||= []).push(p); save(); return p; },
+    setHidden: async (id, hidden) => { const p = db().posts.find((x) => x.id === id); p.hidden = hidden; save(); },
+    deletePost: async (id) => { db().posts = db().posts.filter((x) => x.id !== id); save(); },
+    subscribers: async () => [{ email: 'demo@example.com', name: 'Demo', status: 'active', created_at: new Date().toISOString() }],
+    notify: async () => ({ sent: 0 }),
     session: async () => session,
     onAuth: (cb) => authCbs.push(cb),
     // Demo: walks through the same screens. Any 6-digit code works; nothing is emailed.
