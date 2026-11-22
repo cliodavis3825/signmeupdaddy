@@ -63,7 +63,7 @@ async function route() {
   try {
     if (view === 'e') await viewEvent(a, arg);
     else if (view === 'cancel') await viewCancel(a, arg);
-    else if (view === 'mine') viewMine();
+    else if (view === 'mine' || view === 'me') await viewMe(a, view === 'me' ? arg : null);
     else if (view === 'subscribe') viewSubscribe(a);
     else if (view === 'report') viewReport(a);
     else if (view === 'list') await viewList(a, arg, arg2);
@@ -316,7 +316,7 @@ function confirmPanel(e, r, name) {
         <a class="btn ghost" href="${googleCalUrl(e, eventUrl(e.id))}" target="_blank" rel="noopener">Google Calendar ↗</a>
       </div>
       ${document.body.dataset.mode === 'live' ? `<p class="small">${wl ? "We'll email you if a spot opens." : "A confirmation with the calendar invite is on its way to your inbox, and we'll remind you the day before."}</p>` : ''}
-      <p class="small">Can't make it? Your cancel link (saved in <a href="#/mine">My signups</a> on this device):</p>
+      <p class="small">Can't make it? Your cancel link (saved in <a href="#/me">My signups</a> on this device):</p>
       <div class="copy"><input readonly value="${cancelUrl}"><button class="btn ghost" data-act="copy">Copy</button></div>
     </div>`;
   $app.querySelector('[data-act=ics2]').onclick = () => downloadIcs(e, eventUrl(e.id));
@@ -342,14 +342,94 @@ async function viewCancel(a, token) {
   });
 }
 
-function viewMine() {
-  const rows = mine.all().filter((r) => r.club === CLUB);
+// ───────────────────────── My signups (all clubs) ─────────────────────────
+// No account needed: enter your email, tap the emailed link, and this device stays signed in for 60 days.
+const MEM = 'smud-member';
+const memGet = () => { try { return JSON.parse(localStorage.getItem(MEM)); } catch { return null; } };
+const memSet = (v) => { try { v ? localStorage.setItem(MEM, JSON.stringify(v)) : localStorage.removeItem(MEM); } catch { /* storage blocked */ } };
+
+async function viewMe(a, token) {
+  if (token) {
+    $app.innerHTML = '<section class="panel"><p class="empty">Signing you in…</p></section>';
+    try { const r = await a.member({ action: 'redeem', token }); memSet({ session: r.session, email: r.email }); }
+    catch (err) { memSet(null); return meLogin(a, friendly(err)); }
+    history.replaceState(null, '', location.pathname + location.search + '#/me');
+  }
+  const m = memGet();
+  if (!m) return meLogin(a);
+  let d;
+  try { d = await a.member({ action: 'list', session: m.session }); }
+  catch (err) { memSet(null); return meLogin(a, String(err.message).includes('SESSION_EXPIRED') ? friendly(err) : '' ); }
+  const now = Date.now();
+  const up = d.signups.filter((r) => new Date(r.event.starts_at) >= now).sort((x, y) => x.event.starts_at.localeCompare(y.event.starts_at));
+  const past = d.signups.filter((r) => new Date(r.event.starts_at) < now).sort((x, y) => y.event.starts_at.localeCompare(x.event.starts_at));
+  const link = (e) => `${CONFIG.SITE_URL}/app/?club=${encodeURIComponent(e.club_id)}#/e/${e.id}`;
+  // one colour per club so the single calendar stays readable
+  const PAL = ['#2f6b4f', '#b4472f', '#3b5f9c', '#8a5a9e', '#b88a1f', '#2a7f86'];
+  const clubIds = [...new Set([...d.signups.map((r) => r.event.club_id), ...d.lists.map((l) => l.club_id)])];
+  const clubName = (id) => d.signups.find((r) => r.event.club_id === id)?.event.club_name || d.lists.find((l) => l.club_id === id)?.club_name || id;
+  const col = (id) => PAL[clubIds.indexOf(id) % PAL.length];
+  const m0 = state.meMonth ||= startOfMonth(new Date());
+  const byDay = {};
+  d.signups.forEach((r) => (byDay[dayKey(r.event.starts_at)] ||= []).push(r));
+  const lead = new Date(m0).getDay(); const daysIn = new Date(m0.getFullYear(), m0.getMonth() + 1, 0).getDate();
+  const todayKey = dayKey(new Date()); const cells = [];
+  for (let i = 0; i < lead; i++) cells.push('<div class="cell pad"></div>');
+  for (let n = 1; n <= daysIn; n++) {
+    const date = new Date(m0.getFullYear(), m0.getMonth(), n, 12); const key = dayKey(date); const evs = byDay[key] || [];
+    cells.push(`<button class="cell${key === todayKey ? ' today' : ''}${date < new Date(new Date().setHours(0, 0, 0, 0)) ? ' past' : ''}${evs.length ? ' has' : ''}${state.meDay === key ? ' sel' : ''}" data-day="${key}" ${evs.length ? '' : 'tabindex="-1"'} aria-label="${fDay(date)}${evs.length ? `, ${evs.length} signup${evs.length > 1 ? 's' : ''}` : ''}">
+      <span class="num">${n}</span><span class="dots">${evs.slice(0, 3).map((r) => `<i style="background:${col(r.event.club_id)}"></i>`).join('')}</span>
+      <span class="mini">${evs.slice(0, 2).map((r) => `<em style="--k:${col(r.event.club_id)}">${esc(r.event.title)}</em>`).join('')}</span></button>`);
+  }
+  const row = (r, canCancel) => `<li><div><span class="clubtag" style="--k:${col(r.event.club_id)}">${esc(r.event.club_name || r.event.club_id)}</span><br><a href="${esc(link(r.event))}"><strong>${esc(r.event.title)}</strong></a>${r.status === 'waitlist' ? ' <span class="status waitlist">waitlist</span>' : ''}<br><span>${fDay(r.event.starts_at)} · ${fTime(r.event.starts_at)}${r.guests ? ` · +${r.guests} guest${r.guests > 1 ? 's' : ''}` : ''}</span></div>
+    ${canCancel ? `<div class="row-acts"><button class="btn ghost sm" data-cancel="${esc(r.id)}">Cancel</button></div>` : ''}</li>`;
+  const shown = state.meDay ? d.signups.filter((r) => dayKey(r.event.starts_at) === state.meDay).sort((x, y) => x.event.starts_at.localeCompare(y.event.starts_at)) : up;
   $app.innerHTML = `
-    <section class="panel">
-      <h2>My signups</h2>
-      <p class="hint">Saved on this device only.</p>
-      ${rows.length ? `<ul class="mine">${rows.map((r) => `<li><a href="#/e/${r.event_id}"><strong>${esc(r.title)}</strong><br><span>${fDay(r.starts_at)} · ${fTime(r.starts_at)}</span></a><a class="btn ghost sm" href="#/cancel/${r.token}">Manage</a></li>`).join('')}</ul>` : '<p class="empty">Nothing yet. <a href="#/">Find something fun →</a></p>'}
+    <section class="panel"><div class="admin-head"><div><h2>My signups</h2><p class="hint">${esc(d.email)} · ${clubIds.length} club${clubIds.length === 1 ? '' : 's'}</p></div><button class="btn ghost" data-out>Sign out</button></div>
+      <div class="cal-head"><button class="icon" data-mm="-1" aria-label="Previous month">‹</button><h3 style="margin:0">${fMonth(m0)}</h3><button class="icon" data-mm="1" aria-label="Next month">›</button></div>
+      ${clubIds.length > 1 ? `<p class="legend">${clubIds.map((id) => `<span class="clubtag" style="--k:${col(id)}">${esc(clubName(id))}</span>`).join(' ')}</p>` : ''}
+      <div class="grid dow">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((x) => `<span>${x}</span>`).join('')}</div>
+      <div class="grid days">${cells.join('')}</div>
+      <div class="list-head"><h3>${state.meDay ? fLong(state.meDay + 'T12:00:00') : 'Coming up'}</h3>${state.meDay ? '<button class="link" data-clear>Show all upcoming</button>' : ''}</div>
+      <ul class="admin-list">${shown.map((r) => row(r, new Date(r.event.starts_at) >= now)).join('') || `<li class="empty">${state.meDay ? 'Nothing on this day.' : 'Nothing coming up. Find something fun on a club calendar.'}</li>`}</ul>
+      ${past.length ? `<details><summary>Past (${past.length})</summary><ul class="admin-list">${past.map((r) => row(r, false)).join('')}</ul></details>` : ''}
+    </section>
+    <section class="panel"><h3>Email lists</h3>
+      <ul class="admin-list">${d.lists.map((l) => `<li><div><span class="clubtag" style="--k:${col(l.club_id)}">${esc(l.club_name || l.club_id)}</span>${l.status === 'pending' ? ' <span class="status waitlist">waiting for your confirmation</span>' : ''}</div><div class="row-acts"><button class="btn ghost sm" data-unsub="${l.id}">Unsubscribe</button></div></li>`).join('') || '<li class="empty">You\'re not on any club email lists.</li>'}</ul>
     </section>`;
+  $app.querySelectorAll('[data-mm]').forEach((b) => b.onclick = () => { state.meMonth = new Date(m0.getFullYear(), m0.getMonth() + Number(b.dataset.mm), 1); state.meDay = null; viewMe(a, null); });
+  $app.querySelectorAll('[data-day]').forEach((b) => b.onclick = () => { if (!b.classList.contains('has')) return; state.meDay = state.meDay === b.dataset.day ? null : b.dataset.day; viewMe(a, null); });
+  $app.querySelector('[data-clear]')?.addEventListener('click', () => { state.meDay = null; viewMe(a, null); });
+  $app.querySelector('[data-out]').onclick = async () => { try { await a.member({ action: 'logout', session: m.session }); } catch { /* already gone */ } memSet(null); viewMe(a, null); };
+  const act = async (body, ok) => { try { await a.member({ ...body, session: m.session }); toast(ok); viewMe(a, null); } catch (err) { toast(friendly(err)); } };
+  $app.querySelectorAll('[data-cancel]').forEach((b) => b.onclick = async () => { if (await ask('Cancel this signup? Your spot goes to the next person.', 'Cancel signup')) act({ action: 'cancel', signup_id: b.dataset.cancel }, 'Signup cancelled'); });
+  $app.querySelectorAll('[data-unsub]').forEach((b) => b.onclick = async () => { if (await ask('Stop emails from this club?', 'Unsubscribe')) act({ action: 'unsubscribe', list_id: Number(b.dataset.unsub) }, 'Unsubscribed'); });
+}
+
+function meLogin(a, msg = '') {
+  const local = mine.all();
+  $app.innerHTML = `
+    <section class="panel narrow auth">
+      <h2>My signups</h2>
+      <p class="hint">See everything you've signed up for, across every club. Enter the email you used and we'll send a one-tap link. No password.</p>
+      <form id="ml"><label>Email<input name="email" type="email" required autocomplete="email" maxlength="120"></label>
+      <label class="hp" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+      <div class="cf"></div><button class="btn primary">Email me a link</button><p class="err" role="alert">${esc(msg)}</p></form>
+      ${local.length ? `<p class="hint">On this device only: ${local.map((r) => `<a href="#/cancel/${esc(r.token)}">${esc(r.title)}</a>`).join(', ')}</p>` : ''}
+    </section>`;
+  const f = $app.querySelector('#ml'); const shownAt = Date.now();
+  const capP = captcha(f.querySelector('.cf'), CONFIG.TURNSTILE_SITE_KEY, 'member'); capP.catch(() => {});
+  f.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const d = Object.fromEntries(new FormData(f)); if (d.website) return;
+    const btn = f.querySelector('button'); btn.disabled = true;
+    try {
+      const cap = await capP; const token = await cap.wait();
+      if (!token) throw new Error('CAPTCHA_FAILED');
+      await a.member({ action: 'request', email: d.email.trim().toLowerCase(), captcha: token, elapsed_ms: Date.now() - shownAt, website: '' });
+      $app.querySelector('.auth').innerHTML = `<h2>Check your email</h2><p>If <strong>${esc(d.email)}</strong> has signed up for anything, a link is on its way. It works for 20 minutes. Nothing arrived? Check spam, or make sure you used the same email you signed up with.</p>`;
+    } catch (x) { f.querySelector('.err').textContent = friendly(x); btn.disabled = false; (await capP.catch(() => null))?.reset(); }
+  };
 }
 
 // ───────────────────────── Admin ─────────────────────────

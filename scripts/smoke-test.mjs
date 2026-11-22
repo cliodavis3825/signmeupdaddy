@@ -84,7 +84,7 @@ else {
     const r = await rest('clubs?select=contact_email'); const j = await r.json();
     return expect(!r.ok, `HTTP ${r.status}: contact_email is readable by the public`);
   });
-  for (const t of ['signups', 'club_admins', 'audit_log', 'outbox', 'rate_limits', 'club_requests', 'subscribers', 'event_posts', 'issue_reports', 'site_admins']) {
+  for (const t of ['signups', 'club_admins', 'audit_log', 'outbox', 'rate_limits', 'club_requests', 'subscribers', 'event_posts', 'issue_reports', 'site_admins', 'member_sessions']) {
     await check(`security: anon cannot read ${t}`, async () => {
       const r = await rest(`${t}?select=*&limit=1`); const j = await r.json().catch(() => []);
       return expect(denied(r, j), `HTTP ${r.status}, returned data`);
@@ -190,6 +190,14 @@ else {
   await check('db: anon is not a site admin', async () => {
     const r = await rest('rpc/is_site_admin', { method: 'POST', body: '{}' }); const j = await r.json().catch(() => null);
     return expect(r.ok && j === false, `HTTP ${r.status} ${JSON.stringify(j)}`);
+  });
+  await check('member fn: bad session is refused', async () => {
+    const r = await fnAnon('member', { action: 'list', session: 'x'.repeat(48) });
+    return expect(r.status === 401, `HTTP ${r.status}`);
+  });
+  await check('member fn: link request without CAPTCHA is refused', async () => {
+    const r = await fnAnon('member', { action: 'request', email: 'smoke@example.com', elapsed_ms: 5000 }); const j = await r.json().catch(() => ({}));
+    return expect(r.status === 400 && j.error === 'CAPTCHA_FAILED', `HTTP ${r.status} ${JSON.stringify(j)}`);
   });
   await check('db: public can read event posts (RPC)', async () => {
     const r = await rest('rpc/list_event_posts', { method: 'POST', body: JSON.stringify({ p_event: uuid0 }) }); const j = await r.json();

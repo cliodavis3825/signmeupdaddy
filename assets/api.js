@@ -18,6 +18,8 @@ export const ERRORS = {
   NOT_PUBLISHED: 'Publish the event before emailing the list.',
   MAIL_FAILED: "The email service didn't accept that. Nothing was marked as sent; try again in a minute.",
   MAIL_NOT_CONFIGURED: 'Email sending is not set up yet.',
+  SESSION_EXPIRED: 'Your sign-in has expired. Request a new link.',
+  BAD_LINK: 'That sign-in link is expired or was already used. Request a new one.',
   FORBIDDEN: "You don't have permission to do that.",
   MFA_REQUIRED: 'Sign in again and finish the authenticator step first.',
   LAST_OWNER: "Every club needs at least one owner. Make someone else an owner first.",
@@ -69,6 +71,7 @@ async function liveApi() {
     postComment: (eventId, f) => fnCall('post-comment', { event_id: eventId, ...f }),
     subscribe: (club, f) => fnCall('subscribe', { club_id: club, ...f }),
     reportIssue: (club, f) => fnCall('report-issue', { club_id: club, ...f }),
+    member: (body) => fnCall('member', body),
     confirmSub: (token) => rpc('confirm_subscription', { p_token: token }),
     unsubscribe: (token) => rpc('unsubscribe', { p_token: token }),
     lookup: async (token) => (await rpc('lookup_signup', { p_token: token }))[0] || null,
@@ -239,6 +242,14 @@ function demoApi() {
     },
     subscribe: async () => { /* demo: nothing is emailed */ },
     reportIssue: async () => { /* demo: nothing is sent */ },
+    member: async (b) => {
+      const rows = mine.all();
+      if (b.action === 'request') return { ok: true };
+      if (b.action === 'redeem') return { session: 'demo-session-'.padEnd(40, 'x'), email: 'demo@example.com' };
+      if (b.action === 'list') return { email: 'demo@example.com', lists: [], signups: rows.map((r, i) => ({ id: r.token, status: 'confirmed', guests: 0, event: { id: r.event_id, title: r.title, starts_at: r.starts_at, club_id: r.club, club_name: db().clubs.find((c) => c.id === r.club)?.name || r.club } })) };
+      if (b.action === 'cancel') { mine.remove(b.signup_id); return { ok: true }; }
+      return { ok: true };
+    },
     confirmSub: async () => '518 Analog Club',
     unsubscribe: async () => '518 Analog Club',
     adminPosts: async (eventId) => (db().posts ||= []).filter((p) => p.event_id === eventId).sort((a, b) => b.created_at.localeCompare(a.created_at)),

@@ -615,3 +615,17 @@ grant insert on public.audit_log to service_role;
 drop policy if exists admins_owner_update on public.club_admins;
 create policy admins_owner_update on public.club_admins for update using (is_club_owner(club_id)) with check (is_club_owner(club_id));
 grant update (role) on public.club_admins to authenticated;
+-- ───────────────────────── attendee "My signups" login (no accounts: emailed one-time link → device session) ─────────────────────────
+create table if not exists public.member_sessions (
+  token_hash text primary key,                       -- sha256 of the secret; the secret itself is never stored
+  email      text not null,
+  kind       text not null check (kind in ('link','session')),
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists member_sessions_exp on public.member_sessions (expires_at);
+alter table public.member_sessions enable row level security;   -- no policies: service role only
+revoke all on public.member_sessions from anon, authenticated;
+grant select, insert, update, delete on public.member_sessions to service_role;
+grant select on public.events, public.signups, public.subscribers to service_role;
+grant execute on function public.cancel_signup(uuid), public.unsubscribe(uuid) to service_role;
