@@ -63,7 +63,7 @@ async function route() {
   try {
     if (view === 'e') await viewEvent(a, arg);
     else if (view === 'cancel') await viewCancel(a, arg);
-    else if (view === 'mine') viewMine();
+    else if (view === 'mine' || view === 'me') await viewMe(a, view === 'me' ? arg : null);
     else if (view === 'subscribe') viewSubscribe(a);
     else if (view === 'report') viewReport(a);
     else if (view === 'list') await viewList(a, arg, arg2);
@@ -316,7 +316,7 @@ function confirmPanel(e, r, name) {
         <a class="btn ghost" href="${googleCalUrl(e, eventUrl(e.id))}" target="_blank" rel="noopener">Google Calendar ↗</a>
       </div>
       ${document.body.dataset.mode === 'live' ? `<p class="small">${wl ? "We'll email you if a spot opens." : "A confirmation with the calendar invite is on its way to your inbox, and we'll remind you the day before."}</p>` : ''}
-      <p class="small">Can't make it? Your cancel link (saved in <a href="#/mine">My signups</a> on this device):</p>
+      <p class="small">Can't make it? Your cancel link (saved in <a href="#/me">My signups</a> on this device):</p>
       <div class="copy"><input readonly value="${cancelUrl}"><button class="btn ghost" data-act="copy">Copy</button></div>
     </div>`;
   $app.querySelector('[data-act=ics2]').onclick = () => downloadIcs(e, eventUrl(e.id));
@@ -342,14 +342,71 @@ async function viewCancel(a, token) {
   });
 }
 
-function viewMine() {
-  const rows = mine.all().filter((r) => r.club === CLUB);
+// ───────────────────────── My signups (all clubs) ─────────────────────────
+// No account needed: enter your email, tap the emailed link, and this device stays signed in for 60 days.
+const MEM = 'smud-member';
+const memGet = () => { try { return JSON.parse(localStorage.getItem(MEM)); } catch { return null; } };
+const memSet = (v) => { try { v ? localStorage.setItem(MEM, JSON.stringify(v)) : localStorage.removeItem(MEM); } catch { /* storage blocked */ } };
+
+async function viewMe(a, token) {
+  if (token) {
+    $app.innerHTML = '<section class="panel"><p class="empty">Signing you in…</p></section>';
+    try { const r = await a.member({ action: 'redeem', token }); memSet({ session: r.session, email: r.email }); }
+    catch (err) { memSet(null); return meLogin(a, friendly(err)); }
+    history.replaceState(null, '', location.pathname + location.search + '#/me');
+  }
+  const m = memGet();
+  if (!m) return meLogin(a);
+  let d;
+  try { d = await a.member({ action: 'list', session: m.session }); }
+  catch (err) { memSet(null); return meLogin(a, String(err.message).includes('SESSION_EXPIRED') ? friendly(err) : '' ); }
+  const now = Date.now();
+  const up = d.signups.filter((r) => new Date(r.event.starts_at) >= now).sort((x, y) => x.event.starts_at.localeCompare(y.event.starts_at));
+  const past = d.signups.filter((r) => new Date(r.event.starts_at) < now).sort((x, y) => y.event.starts_at.localeCompare(x.event.starts_at));
+  const link = (e) => `${CONFIG.SITE_URL}/app/?club=${encodeURIComponent(e.club_id)}#/e/${e.id}`;
+  const row = (r, canCancel) => `<li><div><a href="${esc(link(r.event))}"><strong>${esc(r.event.title)}</strong></a>${r.status === 'waitlist' ? ' <span class="status waitlist">waitlist</span>' : ''}<br><span>${fDay(r.event.starts_at)} · ${fTime(r.event.starts_at)}${r.guests ? ` · +${r.guests} guest${r.guests > 1 ? 's' : ''}` : ''}</span></div>
+    ${canCancel ? `<div class="row-acts"><button class="btn ghost sm" data-cancel="${esc(r.id)}">Cancel</button></div>` : ''}</li>`;
+  const byClub = {};
+  for (const r of up) (byClub[r.event.club_id] ||= { name: r.event.club_name || r.event.club_id, rows: [] }).rows.push(r);
+  const clubIds = new Set([...d.signups.map((r) => r.event.club_id), ...d.lists.map((l) => l.club_id)]);
   $app.innerHTML = `
-    <section class="panel">
-      <h2>My signups</h2>
-      <p class="hint">Saved on this device only.</p>
-      ${rows.length ? `<ul class="mine">${rows.map((r) => `<li><a href="#/e/${r.event_id}"><strong>${esc(r.title)}</strong><br><span>${fDay(r.starts_at)} · ${fTime(r.starts_at)}</span></a><a class="btn ghost sm" href="#/cancel/${r.token}">Manage</a></li>`).join('')}</ul>` : '<p class="empty">Nothing yet. <a href="#/">Find something fun →</a></p>'}
+    <section class="panel"><div class="admin-head"><div><h2>My signups</h2><p class="hint">${esc(d.email)} · ${clubIds.size} club${clubIds.size === 1 ? '' : 's'}</p></div><button class="btn ghost" data-out>Sign out</button></div>
+      ${up.length ? Object.entries(byClub).map(([id, c]) => `<h3><a href="${esc(CONFIG.SITE_URL)}/app/?club=${esc(id)}">${esc(c.name)}</a></h3><ul class="admin-list">${c.rows.map((r) => row(r, true)).join('')}</ul>`).join('') : '<p class="empty">Nothing coming up. Find something fun on a club calendar.</p>'}
+      ${past.length ? `<details><summary>Past (${past.length})</summary><ul class="admin-list">${past.map((r) => row(r, false)).join('')}</ul></details>` : ''}
+    </section>
+    <section class="panel"><h3>Email lists</h3>
+      <ul class="admin-list">${d.lists.map((l) => `<li><div><strong>${esc(l.club_name || l.club_id)}</strong>${l.status === 'pending' ? ' <span class="status waitlist">waiting for your confirmation</span>' : ''}</div><div class="row-acts"><button class="btn ghost sm" data-unsub="${l.id}">Unsubscribe</button></div></li>`).join('') || '<li class="empty">You\'re not on any club email lists.</li>'}</ul>
     </section>`;
+  $app.querySelector('[data-out]').onclick = async () => { try { await a.member({ action: 'logout', session: m.session }); } catch { /* already gone */ } memSet(null); viewMe(a, null); };
+  const act = async (body, ok) => { try { await a.member({ ...body, session: m.session }); toast(ok); viewMe(a, null); } catch (err) { toast(friendly(err)); } };
+  $app.querySelectorAll('[data-cancel]').forEach((b) => b.onclick = async () => { if (await ask('Cancel this signup? Your spot goes to the next person.', 'Cancel signup')) act({ action: 'cancel', signup_id: b.dataset.cancel }, 'Signup cancelled'); });
+  $app.querySelectorAll('[data-unsub]').forEach((b) => b.onclick = async () => { if (await ask('Stop emails from this club?', 'Unsubscribe')) act({ action: 'unsubscribe', list_id: Number(b.dataset.unsub) }, 'Unsubscribed'); });
+}
+
+function meLogin(a, msg = '') {
+  const local = mine.all();
+  $app.innerHTML = `
+    <section class="panel narrow auth">
+      <h2>My signups</h2>
+      <p class="hint">See everything you've signed up for, across every club. Enter the email you used and we'll send a one-tap link. No password.</p>
+      <form id="ml"><label>Email<input name="email" type="email" required autocomplete="email" maxlength="120"></label>
+      <label class="hp" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+      <div class="cf"></div><button class="btn primary">Email me a link</button><p class="err" role="alert">${esc(msg)}</p></form>
+      ${local.length ? `<p class="hint">On this device only: ${local.map((r) => `<a href="#/cancel/${esc(r.token)}">${esc(r.title)}</a>`).join(', ')}</p>` : ''}
+    </section>`;
+  const f = $app.querySelector('#ml'); const shownAt = Date.now();
+  const capP = captcha(f.querySelector('.cf'), CONFIG.TURNSTILE_SITE_KEY, 'member'); capP.catch(() => {});
+  f.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const d = Object.fromEntries(new FormData(f)); if (d.website) return;
+    const btn = f.querySelector('button'); btn.disabled = true;
+    try {
+      const cap = await capP; const token = await cap.wait();
+      if (!token) throw new Error('CAPTCHA_FAILED');
+      await a.member({ action: 'request', email: d.email.trim().toLowerCase(), captcha: token, elapsed_ms: Date.now() - shownAt, website: '' });
+      $app.querySelector('.auth').innerHTML = `<h2>Check your email</h2><p>If <strong>${esc(d.email)}</strong> has signed up for anything, a link is on its way. It works for 20 minutes. Nothing arrived? Check spam, or make sure you used the same email you signed up with.</p>`;
+    } catch (x) { f.querySelector('.err').textContent = friendly(x); btn.disabled = false; (await capP.catch(() => null))?.reset(); }
+  };
 }
 
 // ───────────────────────── Admin ─────────────────────────
