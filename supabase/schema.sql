@@ -629,3 +629,19 @@ revoke all on public.member_sessions from anon, authenticated;
 grant select, insert, update, delete on public.member_sessions to service_role;
 grant select on public.events, public.signups, public.subscribers to service_role;
 grant execute on function public.cancel_signup(uuid), public.unsubscribe(uuid) to service_role;
+-- Public pages only ever show "First L." — never a full name.
+create or replace function public.display_name(p text)
+returns text language sql immutable set search_path = public as $$
+  select case when w[1] = '' then 'Guest'
+              when array_length(w, 1) = 1 then left(w[1], 30)
+              else left(w[1], 30) || ' ' || upper(left(w[array_length(w, 1)], 1)) || '.' end
+    from (select regexp_split_to_array(btrim(regexp_replace(coalesce(p, ''), '\s+', ' ', 'g')), ' ') as w) s
+$$;
+create or replace function public.list_event_posts(p_event uuid)
+returns table (id bigint, kind text, author_name text, body text, created_at timestamptz)
+language sql stable security definer set search_path = public as $$
+  select p.id, p.kind, case when p.kind = 'comment' then display_name(p.author_name) else p.author_name end, p.body, p.created_at
+    from event_posts p join events e on e.id = p.event_id
+   where p.event_id = p_event and e.published and not p.hidden
+   order by p.created_at
+$$;

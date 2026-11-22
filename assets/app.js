@@ -1,6 +1,6 @@
 import { CONFIG } from './config.js';
 import { api, friendly, mine } from './api.js';
-import { captcha, tableProgress, gearProgress, assignTables, printHtml, esc, fDay, fLong, fTime, fMonth, dayKey, kind, KINDS, downloadIcs, googleCalUrl, toCsv, download, toLocalInput, fromLocalInput } from './util.js';
+import { captcha, tableProgress, gearProgress, assignTables, printHtml, esc, fDay, fLong, fTime, fMonth, dayKey, kind, KINDS, downloadIcs, googleCalUrl, toCsv, shortName, download, toLocalInput, fromLocalInput } from './util.js';
 
 const params = new URLSearchParams(location.search);
 const EMBED = params.has('embed');
@@ -725,9 +725,9 @@ async function postsPanel(a, e) {
   box.innerHTML = `
     ${updates.length ? `<div class="updates"><h3>Updates from the organizers</h3>${updates.map((p) => `<div class="post upd"><p>${esc(p.body).replace(/\n/g, '<br>')}</p><small>${fPost(p.created_at)}</small></div>`).join('')}</div>` : ''}
     <h3>Comments &amp; questions${comments.length ? ` (${comments.length})` : ''}</h3>
-    ${comments.map((p) => `<div class="post"><strong>${esc(p.author_name)}</strong> <small>${fPost(p.created_at)}</small><p>${esc(p.body).replace(/\n/g, '<br>')}</p></div>`).join('') || '<p class="hint">No comments yet. Ask a question or say hi.</p>'}
+    ${comments.map((p) => `<div class="post"><strong>${esc(p.kind === 'comment' ? shortName(p.author_name) : p.author_name)}</strong> <small>${fPost(p.created_at)}</small><p>${esc(p.body).replace(/\n/g, '<br>')}</p></div>`).join('') || '<p class="hint">No comments yet. Ask a question or say hi.</p>'}
     <form id="cf2" novalidate>
-      <label>Your name<input name="name" required maxlength="60" autocomplete="name"></label>
+      <label>Your name <span class="opt">(shown as first name and last initial)</span><input name="name" required maxlength="60" autocomplete="name"></label>
       <label>Comment<textarea name="body" required maxlength="1000" rows="3"></textarea></label>
       <label class="hp" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
       <div class="cf"></div>
