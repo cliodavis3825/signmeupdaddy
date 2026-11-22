@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self'; frame-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>518 Analog Club — off the screen, into the room</title>
+  <meta name="description" content="518 Analog Club: book club, mahjong, trivia and craft nights in the Capital Region. Offline on purpose.">
+  <meta property="og:title" content="518 Analog Club">
+  <meta property="og:description" content="Books, tiles, trivia & crafts — offline in the Capital Region.">
+  <meta name="theme-color" content="#f3ecd8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Mono:wght@400;700&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="club.css">
+</head>
+<body>
+  <a class="skip" href="#calendar">Skip to the calendar</a>
+
+  <header class="top">
+    <a class="logo" href="#top">518<span>analog</span></a>
+    <nav aria-label="Main">
+      <a href="#about">About</a>
+      <a href="#calendar">Calendar</a>
+      <a href="#doing">What we do</a>
+      <a href="#join">Join</a>
+      <a href="#issue">Report an issue</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <p class="tag">Capital Region · Est. 2026 · Free to join</p>
+      <h1>Put the phone down.<br><em>Pick the tiles up.</em></h1>
+      <p class="lede">518 Analog Club is a neighborly bunch who meet in person for book club, mahjong, trivia and craft nights. No apps to learn, no feeds to scroll. Just a table, some snacks and good company.</p>
+      <p class="cta-row">
+        <a class="btn" href="#calendar">See what's coming up</a>
+        <a class="btn alt" href="#join">How to join</a>
+      </p>
+    </section>
+
+    <section id="about" class="block">
+      <h2><span>About</span> the club</h2>
+      <div class="cols">
+        <p>We started 518 Analog because the best evenings are the ones where everybody looks up. Come once, come every week, bring a friend or come alone and meet someone. Beginners are the point, not the exception: we'll teach you the game.</p>
+        <ul class="facts">
+          <li><b>Where:</b> around the Capital Region (each event lists its spot)</li>
+          <li><b>Who:</b> grown-ups of every age and experience level</li>
+          <li><b>Cost:</b> joining is free; some events pass the hat for supplies</li>
+          <li><b>Signing up:</b> takes about 30 seconds, and you can cancel any time</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="calendar" class="block">
+      <h2><span>Upcoming</span> events</h2>
+      <p class="note">Pick an event, tap <b>Sign up</b>, and you'll get a confirmation email. Seats are limited, so a spot you can't use is a gift to someone on the waitlist: please cancel from your email if plans change.</p>
+      <div class="frame">
+        <iframe src="/" title="518 Analog Club event calendar and signup" loading="lazy" height="820"></iframe>
+      </div>
+      <p class="note small">Calendar not showing? <a href="/">Open it in its own page</a>.</p>
+    </section>
+
+    <section id="doing" class="block">
+      <h2><span>What</span> we do</h2>
+      <div class="cards">
+        <article class="card c1"><h3>Book Club</h3><p>One book, one evening, lots of opinions. Fiction, memoir, the occasional page-turner nobody will admit to loving.</p></article>
+        <article class="card c2"><h3>Mahjong</h3><p>Learn-as-you-play tables for newcomers and open tables for old hands. Tiles and snacks provided.</p></article>
+        <article class="card c3"><h3>Trivia</h3><p>Teams of friendly strangers, questions from every decade. Bragging rights are the only prize.</p></article>
+        <article class="card c4"><h3>Craft Nights</h3><p>Knit, stitch, paint or just make a mess. Bring your own project or try ours.</p></article>
+      </div>
+    </section>
+
+    <section id="join" class="block join">
+      <h2><span>Join</span> us</h2>
+      <ol class="steps">
+        <li><b>Pick an event</b> from the calendar above.</li>
+        <li><b>Sign up</b> with your name and email. That's your membership.</li>
+        <li><b>Show up</b> and say hi. We'll handle the rest.</li>
+      </ol>
+      <p class="note">Questions before you come? <span data-mailto="Hello 518 Analog">Ask on the day or use the report form below</span>; a real person reads everything.</p>
+    </section>
+
+    <section id="issue" class="block issue">
+      <h2><span>Report</span> an issue</h2>
+      <p class="note">Something broken on the site, a signup that didn't go through, or a problem at an event? Tell us and we'll sort it out.</p>
+      <p class="cta-row">
+        <a class="btn" id="issue-mail" href="https://github.com/cliodavis3825/signmeupdaddy/issues/new" target="_blank" rel="noopener">Report a website problem</a>
+      </p>
+      <p class="note small" id="issue-note">Website problems go to our public issue tracker (free GitHub account needed). Please don't include personal details there.</p>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p>© 518 Analog Club · Signups by <a href="https://signmeupdaddy.com">signmeupdaddy</a></p>
+  </footer>
+  <script src="club.js"></script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+:root{--paper:#f3ecd8;--ink:#1a1a1a;--red:#c9402d;--teal:#1f6f6b;--gold:#f2c230;--card:#fffaf0}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:4.5rem}
+body{margin:0;background:var(--paper);color:var(--ink);font:18px/1.65 Figtree,system-ui,sans-serif;
+  background-image:radial-gradient(rgba(0,0,0,.055) 1px,transparent 1px);background-size:5px 5px}
+.skip{position:absolute;left:-999px}.skip:focus{left:1rem;top:1rem;background:#fff;padding:.5rem 1rem;z-index:20}
+a{color:var(--teal);text-underline-offset:3px}
+a:focus-visible,.btn:focus-visible{outline:3px solid var(--red);outline-offset:3px}
+.top{position:sticky;top:0;z-index:10;display:flex;flex-wrap:wrap;gap:.5rem 1.5rem;align-items:center;justify-content:space-between;
+  padding:.7rem 1.25rem;background:var(--paper);border-bottom:3px solid var(--ink)}
+.logo{font:1.6rem 'Archivo Black',sans-serif;color:var(--ink);text-decoration:none;letter-spacing:-.5px}
+.logo span{background:var(--ink);color:var(--paper);padding:0 .35rem;margin-left:.2rem}
+nav{display:flex;flex-wrap:wrap;gap:.25rem 1.1rem}
+nav a{font:700 .85rem 'Space Mono',monospace;text-transform:uppercase;color:var(--ink);text-decoration:none;padding:.3rem 0;border-bottom:3px solid transparent}
+nav a:hover{border-color:var(--red)}
+main{max-width:62rem;margin:0 auto;padding:0 1.25rem}
+.hero{padding:3.5rem 0 2.5rem}
+.tag{display:inline-block;font:700 .8rem 'Space Mono',monospace;text-transform:uppercase;background:var(--gold);border:2px solid var(--ink);padding:.2rem .7rem;transform:rotate(-1.5deg);margin:0 0 1.2rem}
+h1{font:clamp(2.4rem,7vw,4.6rem)/1.02 'Archivo Black',sans-serif;margin:0 0 1.2rem;letter-spacing:-1px}
+h1 em{font-style:normal;color:var(--red);background:linear-gradient(transparent 62%,var(--gold) 62%)}
+.lede{font-size:1.25rem;max-width:40rem}
+.cta-row{display:flex;flex-wrap:wrap;gap:1rem;margin:1.6rem 0 0}
+.btn{display:inline-block;font:700 1rem 'Space Mono',monospace;text-transform:uppercase;text-decoration:none;color:#fff;background:var(--ink);
+  border:3px solid var(--ink);padding:.8rem 1.3rem;box-shadow:5px 5px 0 var(--red);transition:transform .1s,box-shadow .1s}
+.btn:hover{transform:translate(2px,2px);box-shadow:3px 3px 0 var(--red)}
+.btn.alt{background:var(--card);color:var(--ink);box-shadow:5px 5px 0 var(--teal)}
+.btn.alt:hover{box-shadow:3px 3px 0 var(--teal)}
+.block{padding:2.5rem 0;border-top:3px dashed var(--ink)}
+h2{font:clamp(1.7rem,4vw,2.4rem)/1.1 'Archivo Black',sans-serif;margin:0 0 1.2rem}
+h2 span{background:var(--ink);color:var(--paper);padding:0 .45rem;margin-right:.2rem}
+.cols{display:grid;grid-template-columns:1.2fr 1fr;gap:2rem}
+.facts{list-style:none;margin:0;padding:1.2rem 1.4rem;background:var(--card);border:3px solid var(--ink);box-shadow:6px 6px 0 var(--teal)}
+.facts li{padding:.35rem 0}
+.note{max-width:44rem}.small{font-size:.95rem}
+.frame{border:3px solid var(--ink);background:var(--card);box-shadow:8px 8px 0 var(--gold);margin:1.4rem 8px 1.2rem 0}
+.frame iframe{display:block;width:100%;height:820px;border:0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:1.5rem}
+.card{background:var(--card);border:3px solid var(--ink);padding:1.2rem 1.3rem;box-shadow:6px 6px 0 var(--ink)}
+.card h3{font:1.35rem 'Archivo Black',sans-serif;margin:0 0 .4rem}
+.card p{margin:0}
+.c1{transform:rotate(-.6deg)}.c2{transform:rotate(.5deg)}.c3{transform:rotate(.4deg)}.c4{transform:rotate(-.5deg)}
+.c1 h3{color:var(--red)}.c2 h3{color:var(--teal)}.c3 h3{color:#8a6a00}.c4 h3{color:var(--red)}
+.steps{counter-reset:s;list-style:none;padding:0;margin:0 0 1.2rem;display:grid;gap:.8rem;max-width:40rem}
+.steps li{counter-increment:s;padding-left:3.2rem;position:relative}
+.steps li::before{content:counter(s);position:absolute;left:0;top:-.1rem;width:2.3rem;height:2.3rem;display:grid;place-items:center;
+  font:1.2rem 'Archivo Black';background:var(--gold);border:3px solid var(--ink);border-radius:50%}
+.foot{border-top:3px solid var(--ink);padding:1.5rem 1.25rem;text-align:center;font:.85rem 'Space Mono',monospace}
+.foot p{margin:0}
+@media(max-width:44rem){.cols{grid-template-columns:1fr}.frame iframe{height:900px}.top{position:static}html{scroll-padding-top:1rem}.card{transform:none}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.btn{transition:none}}
