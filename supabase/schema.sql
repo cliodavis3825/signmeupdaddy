@@ -380,6 +380,9 @@ grant execute on function public.enqueue_reminders()     to service_role;
 grant execute on function public.claim_mail(int)         to service_role;
 grant execute on function public.mark_mail(bigint, text) to service_role;
 
+-- The ical Edge Function looks up the club name with the service role.
+grant select (id, name) on public.clubs to service_role;
+
 -- Attendees can see their table number on their manage page.
 drop function if exists public.lookup_signup(uuid);
 create function public.lookup_signup(p_token uuid)
