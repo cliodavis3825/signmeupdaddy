@@ -537,3 +537,81 @@ create table if not exists public.issue_reports (
 alter table public.issue_reports enable row level security;   -- no policies: service role / dashboard only
 revoke all on public.issue_reports from anon, authenticated;
 grant select, insert on public.issue_reports to service_role;
+-- ───────────────────────── admin page: roles, site owner ─────────────────────────
+-- Three levels: site owner (site_admins) → club owner (club_admins.role = 'owner') → organizer.
+alter table public.club_admins add column if not exists role  text not null default 'organizer' check (role in ('owner','organizer'));
+alter table public.club_admins add column if not exists email text;
+alter table public.club_admins add column if not exists added_at timestamptz not null default now();
+
+create table if not exists public.site_admins (user_id uuid primary key references auth.users(id) on delete cascade);
+alter table public.site_admins enable row level security;
+revoke all on public.site_admins from anon, authenticated;
+-- First site owner (run once, with your email):
+--   insert into public.site_admins select id from auth.users where email = 'YOU@EXAMPLE.COM';
+--   update public.club_admins set role = 'owner';
+
+create or replace function public.is_site_admin()
+returns boolean language sql stable security definer set search_path = public as $$
+  select has_mfa() and exists (select 1 from site_admins where user_id = auth.uid());
+$$;
+create or replace function public.is_club_admin(p_club text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select has_mfa() and (exists (select 1 from club_admins where club_id = p_club and user_id = auth.uid())
+                        or exists (select 1 from site_admins where user_id = auth.uid()));
+$$;
+create or replace function public.is_club_owner(p_club text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select has_mfa() and (exists (select 1 from club_admins where club_id = p_club and user_id = auth.uid() and role = 'owner')
+                        or exists (select 1 from site_admins where user_id = auth.uid()));
+$$;
+revoke all on function public.is_site_admin(), public.is_club_owner(text) from public;
+grant execute on function public.is_site_admin(), public.is_club_owner(text) to anon, authenticated;
+
+-- Owners see their club's team; everyone sees their own row.
+drop policy if exists admins_self on public.club_admins;
+create policy admins_self on public.club_admins for select using ((user_id = auth.uid() and has_mfa()) or is_club_owner(club_id));
+
+-- Club settings: owners only, and only these columns.
+drop policy if exists clubs_admin_update on public.clubs;
+create policy clubs_admin_update on public.clubs for update using (is_club_owner(id));
+revoke update on public.clubs from authenticated;
+grant update (name, tagline, accent, timezone, contact_email) on public.clubs to authenticated;
+
+-- Email list upkeep (organizers). Adding people goes through the admin-api function so double opt-in is kept.
+drop policy if exists subscribers_admin_update on public.subscribers;
+drop policy if exists subscribers_admin_delete on public.subscribers;
+create policy subscribers_admin_update on public.subscribers for update using (is_club_admin(club_id));
+create policy subscribers_admin_delete on public.subscribers for delete using (is_club_admin(club_id));
+grant update (status) on public.subscribers to authenticated;
+grant delete on public.subscribers to authenticated;
+
+-- Site owner inboxes.
+drop policy if exists club_requests_site_read   on public.club_requests;
+drop policy if exists club_requests_site_update on public.club_requests;
+create policy club_requests_site_read   on public.club_requests for select using (is_site_admin());
+create policy club_requests_site_update on public.club_requests for update using (is_site_admin());
+grant select on public.club_requests to authenticated;
+grant update (status) on public.club_requests to authenticated;
+drop policy if exists issue_reports_site_read   on public.issue_reports;
+drop policy if exists issue_reports_site_update on public.issue_reports;
+create policy issue_reports_site_read   on public.issue_reports for select using (is_site_admin());
+create policy issue_reports_site_update on public.issue_reports for update using (is_site_admin());
+grant select on public.issue_reports to authenticated;
+grant update (status) on public.issue_reports to authenticated;
+
+-- Used by the admin-api function (service role) to find an existing login by email.
+create or replace function public.find_user(p_email text)
+returns uuid language sql stable security definer set search_path = public, auth as $$
+  select id from auth.users where lower(email) = lower(p_email) limit 1;
+$$;
+revoke all on function public.find_user(text) from public, anon, authenticated;
+grant execute on function public.find_user(text) to service_role;
+grant select, insert, update, delete on public.club_admins to service_role;
+grant select on public.site_admins to service_role;
+grant insert, select on public.clubs to service_role;
+grant select, update on public.club_requests to service_role;
+grant insert on public.audit_log to service_role;
+-- Owners can change a teammate's role (adding/removing people goes through admin-api).
+drop policy if exists admins_owner_update on public.club_admins;
+create policy admins_owner_update on public.club_admins for update using (is_club_owner(club_id)) with check (is_club_owner(club_id));
+grant update (role) on public.club_admins to authenticated;

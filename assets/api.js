@@ -18,6 +18,11 @@ export const ERRORS = {
   NOT_PUBLISHED: 'Publish the event before emailing the list.',
   MAIL_FAILED: "The email service didn't accept that. Nothing was marked as sent; try again in a minute.",
   MAIL_NOT_CONFIGURED: 'Email sending is not set up yet.',
+  FORBIDDEN: "You don't have permission to do that.",
+  MFA_REQUIRED: 'Sign in again and finish the authenticator step first.',
+  LAST_OWNER: "Every club needs at least one owner. Make someone else an owner first.",
+  SLUG_TAKEN: 'That web address is already used by another club.',
+  BAD_SLUG: 'Use 2–40 lowercase letters, numbers or dashes for the web address.',
   BAD_ORIGIN: 'Signups only work from signmeupdaddy.com.',
   'Token has expired or is invalid': 'That code is wrong or expired. Request a new one.',
   'Invalid TOTP code': "That authenticator code didn't match. Check your app's clock and try again.",
@@ -39,7 +44,7 @@ async function liveApi() {
   const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
   const sb = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
   const rpc = async (fn, args) => {
-    const { data, error } = await sb.rpc(fn, args);
+    const { data, error } = await sb.rpc(fn, args || {});
     if (error) throw new Error(error.message);
     return data;
   };
@@ -95,10 +100,24 @@ async function liveApi() {
     },
     mfaVerify: (factorId, code) => q(sb.auth.mfa.challengeAndVerify({ factorId, code })),
     signOut: (everywhere) => sb.auth.signOut({ scope: everywhere ? 'global' : 'local' }),
+    // Clubs I can manage, each with my role: 'site' (site owner, every club), 'owner' or 'organizer'.
     myClubs: async () => {
-      const rows = await q(sb.from('club_admins').select(`club_id, clubs(${CLUB_COLS})`));
-      return rows.map((r) => r.clubs);
+      if (await rpc('is_site_admin')) return (await q(sb.from('clubs').select(CLUB_COLS).order('name'))).map((c) => ({ ...c, role: 'site' }));
+      const rows = await q(sb.from('club_admins').select(`club_id, role, clubs(${CLUB_COLS})`));
+      return rows.map((r) => ({ ...r.clubs, role: r.role }));
     },
+    clubSettings: (id) => q(sb.from('clubs').select(`${CLUB_COLS}, contact_email`).eq('id', id).single()),
+    updateClub: (id, patch) => q(sb.from('clubs').update(patch).eq('id', id)),
+    team: (club) => q(sb.from('club_admins').select('user_id, role, email, added_at').eq('club_id', club).order('added_at')),
+    admin: (body) => fnCall('admin-api', body),
+    setRole: (club, userId, role) => q(sb.from('club_admins').update({ role }).eq('club_id', club).eq('user_id', userId)),
+    setSubStatus: (club, email, status) => q(sb.from('subscribers').update({ status }).eq('club_id', club).eq('email', email)),
+    removeSub: (club, email) => q(sb.from('subscribers').delete().eq('club_id', club).eq('email', email)),
+    requests: () => q(sb.from('club_requests').select('*').order('created_at', { ascending: false }).limit(100)),
+    setRequestStatus: (id, status) => q(sb.from('club_requests').update({ status }).eq('id', id)),
+    reports: () => q(sb.from('issue_reports').select('*').order('created_at', { ascending: false }).limit(100)),
+    setReportStatus: (id, status) => q(sb.from('issue_reports').update({ status }).eq('id', id)),
+    audit: (club) => q(sb.from('audit_log').select('at, action, tbl, changes').eq('club_id', club).order('at', { ascending: false }).limit(100)),
     adminEvents: (club) => q(sb.from('events').select('*').eq('club_id', club).order('starts_at')),
     saveEvent: (ev) => ev.id
       ? q(sb.from('events').update(ev).eq('id', ev.id).select().single())
@@ -237,7 +256,16 @@ function demoApi() {
     mfaEnroll: async () => ({ factorId: 'demo-factor', secret: 'JBSWY3DPEHPK3PXP', qr: demoQr() }),
     mfaVerify: async (factorId, code) => { if (!/^\d{6}$/.test(code)) throw new Error('Invalid TOTP code'); demoFactor = factorId; demoAal = 'aal2'; },
     signOut: async () => { session = null; demoAal = null; authCbs.forEach((cb) => cb(null)); },
-    myClubs: async () => db().clubs,
+    myClubs: async () => db().clubs.map((c) => ({ ...c, role: 'site' })),
+    clubSettings: async (id) => ({ ...db().clubs.find((c) => c.id === id), contact_email: '' }),
+    updateClub: async (id, patch) => { Object.assign(db().clubs.find((c) => c.id === id), patch); save(); },
+    team: async () => [{ user_id: 'demo', role: 'owner', email: 'demo@example.com', added_at: new Date().toISOString() }],
+    admin: async () => ({ ok: true, sent: 0, skipped: 0, mailed: false }),
+    setSubStatus: async () => {}, removeSub: async () => {}, setRole: async () => {},
+    requests: async () => [{ id: 1, created_at: new Date().toISOString(), club_name: 'Demo Chess Club', contact: 'Sam', email: 'sam@example.com', place: 'Albany', about: 'Weekly chess night.', status: 'new' }],
+    setRequestStatus: async () => {},
+    reports: async () => [], setReportStatus: async () => {},
+    audit: async () => [],
     adminEvents: async (club) => db().events.filter((e) => e.club_id === club).sort((a, b) => a.starts_at.localeCompare(b.starts_at)),
     saveEvent: async (ev) => {
       if (ev.id) { const i = db().events.findIndex((e) => e.id === ev.id); db().events[i] = { ...db().events[i], ...ev }; promote(ev.id); save(); return db().events[i]; }
