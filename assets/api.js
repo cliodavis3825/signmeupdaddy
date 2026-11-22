@@ -80,7 +80,7 @@ async function liveApi() {
     // shouldCreateUser:false → strangers can't create accounts; organizers are invited by you.
     signIn: async (email, captchaToken) => {
       const { error } = await sb.auth.signInWithOtp({
-        email, options: { shouldCreateUser: false, captchaToken, emailRedirectTo: location.origin + location.pathname + '#/admin' },
+        email, options: { shouldCreateUser: false, captchaToken, emailRedirectTo: (() => { const u = new URL(location.href); u.hash = ''; u.searchParams.set('admin', '1'); return u.toString(); })() },
       });
       // Don't reveal whether an email belongs to an organizer; only surface real failures.
       if (error && !/signups not allowed|user not found/i.test(error.message)) throw new Error(error.message);
