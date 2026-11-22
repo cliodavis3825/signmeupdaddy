@@ -210,3 +210,6 @@ td input.ci { width: 20px; height: 20px; accent-color: var(--ok); }
   .table-card .club { font-size: 12pt; color: #444; } .table-card .big { font: 800 220pt/1 var(--display); }
   .table-card .lbl { letter-spacing: .4em; font-size: 16pt; margin: 0 0 24pt; } .table-card ul { list-style: none; padding: 0; font-size: 22pt; line-height: 1.6; }
 }
+
+.brand img { display: block; height: 64px; width: auto; }
+.foot-logo { height: 48px; width: auto; vertical-align: middle; margin-left: .35rem; }
