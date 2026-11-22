@@ -383,6 +383,18 @@ grant execute on function public.mark_mail(bigint, text) to service_role;
 -- The ical Edge Function looks up the club name with the service role.
 grant select (id, name) on public.clubs to service_role;
 
+-- Table privileges for browser roles. RLS policies decide rows, but the roles also need
+-- table/column grants (Supabase no longer grants these automatically).
+-- Public visitors never read clubs.contact_email; the app selects explicit columns.
+grant select (id, name, tagline, accent, timezone, created_at) on public.clubs to anon;
+grant select, update on public.clubs to authenticated;
+grant select on public.events to anon;
+grant select, insert, update, delete on public.events to authenticated;
+grant select on public.signups to authenticated;
+grant update (table_no, checked_in_at) on public.signups to authenticated;
+grant select on public.club_admins to authenticated;
+grant select on public.audit_log to authenticated;
+
 -- Attendees can see their table number on their manage page.
 drop function if exists public.lookup_signup(uuid);
 create function public.lookup_signup(p_token uuid)
