@@ -56,6 +56,7 @@ async function route() {
     else if (view === 'cancel') await viewCancel(a, arg);
     else if (view === 'mine') viewMine();
     else if (view === 'subscribe') viewSubscribe(a);
+    else if (view === 'report') viewReport(a);
     else if (view === 'list') await viewList(a, arg, arg2);
     else if (view === 'admin') await viewAdmin(a);
     else await viewCalendar(a);
@@ -456,6 +457,52 @@ async function viewList(a, action, token) {
       ? `<h2>You're unsubscribed</h2><p>You won't get any more emails from ${club}. Changed your mind? You can rejoin any time from the calendar.</p>`
       : `<h2>You're on the list</h2><p>Thanks! You'll hear from ${club} when new events go up.</p>`}
     <a class="btn" href="#/">See the calendar</a></section>`;
+}
+
+
+// ───────────────────────── Report an issue ─────────────────────────
+// Goes to the site owner by email (report-issue function), with a few set questions so reports are actionable.
+function viewReport(a) {
+  const topics = ['Signing up for an event', "Didn't get an email", 'Email list', 'Problem at an event', 'Website problem', 'Something else'];
+  $app.innerHTML = `
+    <section class="panel" id="rep">
+      <h3>Report an issue</h3>
+      <p class="hint">Tell us what went wrong and we'll email you back. A real person reads every report.</p>
+      <form id="rf" novalidate>
+        <label>What kind of problem?<select name="topic">${topics.map((t) => `<option>${esc(t)}</option>`).join('')}</select></label>
+        <label>Which event or page? <span class="opt">(optional)</span><input name="page" maxlength="200" placeholder="e.g. Mahjong Night on Nov 29"></label>
+        <label>What happened?<textarea name="what" required maxlength="2000" rows="4"></textarea></label>
+        <label>What did you expect to happen? <span class="opt">(optional)</span><textarea name="expected" maxlength="1000" rows="2"></textarea></label>
+        <div class="two">
+          <label>Your name<input name="name" required maxlength="80" autocomplete="name"></label>
+          <label>Your email (so we can reply)<input name="email" type="email" required maxlength="120" autocomplete="email"></label>
+        </div>
+        <label class="hp" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+        <div class="cf"></div>
+        <button class="btn primary" type="submit">Send report</button>
+        <p class="err" role="alert"></p>
+      </form>
+    </section>`;
+  const f = $app.querySelector('#rf'); const shownAt = Date.now();
+  const capP = captcha(f.querySelector('.cf'), CONFIG.TURNSTILE_SITE_KEY, 'report'); capP.catch(() => {});
+  f.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const d = Object.fromEntries(new FormData(f)); const err = f.querySelector('.err'); err.textContent = '';
+    if (d.website) return;
+    if (!d.what.trim()) return (err.textContent = 'Tell us what happened.');
+    if (!d.name.trim()) return (err.textContent = 'Add your name.');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email)) return (err.textContent = 'That email looks off.');
+    const btn = f.querySelector('button'); btn.disabled = true; btn.textContent = 'Sending…';
+    try {
+      const cap = await capP; const token = await cap.wait();
+      if (!token) throw new Error('CAPTCHA_FAILED');
+      await a.reportIssue(CLUB, { ...d, device: navigator.userAgent.slice(0, 300), captcha: token, elapsed_ms: Date.now() - shownAt });
+      $app.querySelector('#rep').innerHTML = '<h3>Thank you</h3><p>We got your report and will email you back at the address you gave us.</p>';
+    } catch (x) {
+      err.textContent = friendly(x); btn.disabled = false; btn.textContent = 'Send report'; (await capP.catch(() => null))?.reset();
+    }
+    postHeight();
+  };
 }
 
 // ───────────────────────── Event updates & comments ─────────────────────────

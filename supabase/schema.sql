@@ -519,3 +519,21 @@ language sql stable security definer set search_path = public as $$
 $$;
 revoke all on function public.list_event_posts(uuid) from public;
 grant execute on function public.list_event_posts(uuid) to anon, authenticated;
+
+-- "Report an issue" form (written by the report-issue Edge Function, which also emails NOTIFY_EMAIL).
+create table if not exists public.issue_reports (
+  id         bigint generated always as identity primary key,
+  created_at timestamptz not null default now(),
+  club_id    text,
+  topic      text not null check (char_length(topic) <= 60),
+  page       text check (char_length(page) <= 200),
+  what       text not null check (char_length(what) between 1 and 2000),
+  expected   text check (char_length(expected) <= 1000),
+  name       text not null check (char_length(name) between 1 and 80),
+  email      text not null check (char_length(email) <= 120),
+  device     text check (char_length(device) <= 300),
+  status     text not null default 'new' check (status in ('new','handled'))
+);
+alter table public.issue_reports enable row level security;   -- no policies: service role / dashboard only
+revoke all on public.issue_reports from anon, authenticated;
+grant select, insert on public.issue_reports to service_role;

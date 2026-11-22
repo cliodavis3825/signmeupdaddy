@@ -63,6 +63,7 @@ async function liveApi() {
     listPosts: (eventId) => rpc('list_event_posts', { p_event: eventId }),
     postComment: (eventId, f) => fnCall('post-comment', { event_id: eventId, ...f }),
     subscribe: (club, f) => fnCall('subscribe', { club_id: club, ...f }),
+    reportIssue: (club, f) => fnCall('report-issue', { club_id: club, ...f }),
     confirmSub: (token) => rpc('confirm_subscription', { p_token: token }),
     unsubscribe: (token) => rpc('unsubscribe', { p_token: token }),
     lookup: async (token) => (await rpc('lookup_signup', { p_token: token }))[0] || null,
@@ -218,6 +219,7 @@ function demoApi() {
       (db().posts ||= []).push({ id: uid(), event_id: eventId, kind: 'comment', author_name: f.name.trim(), body: f.body.trim(), hidden: false, created_at: new Date().toISOString() }); save();
     },
     subscribe: async () => { /* demo: nothing is emailed */ },
+    reportIssue: async () => { /* demo: nothing is sent */ },
     confirmSub: async () => '518 Analog Club',
     unsubscribe: async () => '518 Analog Club',
     adminPosts: async (eventId) => (db().posts ||= []).filter((p) => p.event_id === eventId).sort((a, b) => b.created_at.localeCompare(a.created_at)),
