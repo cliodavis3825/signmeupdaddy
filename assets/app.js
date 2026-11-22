@@ -719,7 +719,8 @@ function loginStep(a) {
   $app.innerHTML = `
     <section class="panel narrow auth">
       <p class="step">Organizer sign-in · step 1 of 2</p>
-      <h2>Sign in</h2>
+      <h2>Manage my club</h2>
+      <p class="hint">For club owners and organizers. Create events, see rosters and the email list, add teammates.</p>
       <p class="hint">${a.mode === 'demo' ? 'Demo mode: any email works, nothing is sent.' : "We'll email you a 6-digit code. No passwords to leak."}</p>
       <form id="login"><label>Email<input name="email" type="email" required autocomplete="username email"></label>
       <div class="cf"></div>
