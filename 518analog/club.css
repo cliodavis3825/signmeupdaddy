@@ -48,3 +48,4 @@ h2 span{background:var(--ink);color:var(--paper);padding:0 .45rem;margin-right:.
 .foot p{margin:0}
 @media(max-width:44rem){.cols{grid-template-columns:1fr}.frame iframe{height:900px}.top{position:static}html{scroll-padding-top:1rem}.card{transform:none}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.btn{transition:none}}
+.sl{height:44px;width:auto;vertical-align:middle;margin-left:.3rem}
