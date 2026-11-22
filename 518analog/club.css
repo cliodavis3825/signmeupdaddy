@@ -51,3 +51,4 @@ h2 span{background:var(--ink);color:var(--paper);padding:0 .45rem;margin-right:.
 .sl{height:44px;width:auto;vertical-align:middle;margin-left:.3rem}
 .sub-h{font:1.3rem 'Archivo Black',sans-serif;margin:1.8rem 0 .4rem}.frame.small iframe{height:330px}@media(max-width:44rem){.frame.small iframe{height:420px}}
 .frame.report iframe{height:760px}@media(max-width:44rem){.frame.report iframe{height:880px}}
+nav a.manage{border:2px solid var(--ink);padding:.25rem .6rem;border-radius:6px}
