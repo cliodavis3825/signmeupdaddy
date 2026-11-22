@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Content Security Policy. GitHub Pages can't send headers, so it lives here.
+       (frame-ancestors can't be set via meta; the calendar is meant to be embeddable anyway.) -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://esm.sh https://challenges.cloudflare.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://esm.sh; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://covers.openlibrary.org https://archive.org https://*.archive.org; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>signmeupdaddy — sign up, show up</title>
+  <meta name="description" content="Event signups for clubs: book club, mahjong, trivia and craft nights. Save your spot in seconds.">
+  <meta property="og:title" content="signmeupdaddy">
+  <meta property="og:description" content="Sign up, show up. Event signups for clubs.">
+  <meta property="og:image" content="https://signmeupdaddy.com/assets/img/og-image.png">
+  <meta name="theme-color" content="#f6f1e7">
+  <link rel="icon" type="image/png" href="../assets/img/favicon.png">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+  <div id="demo-banner" class="demo-banner" hidden>Demo mode — signups are saved in this browser only. <a href="#/admin">Try the organizer view →</a></div>
+  <header class="top">
+    <a class="brand" href="/" aria-label="SignMeUpDaddy.com home"><img src="../assets/img/logo-sm.png" alt="SignMeUpDaddy.com" width="76" height="64"></a>
+    <nav>
+      <a data-nav href="#/">Calendar</a>
+      <a data-nav href="#/mine">My signups</a>
+      <a data-nav href="#/admin">Organizers</a>
+    </nav>
+  </header>
+  <div class="club-bar"><span class="dot"></span><span id="club-name">Loading…</span></div>
+  <main id="app" aria-live="polite"><p class="empty">Loading events…</p></main>
+  <footer class="foot">
+    <span class="powered">Signups by <a href="https://signmeupdaddy.com" target="_blank" rel="noopener"><img class="foot-logo" src="../assets/img/logo-sm.png" alt="SignMeUpDaddy.com" width="57" height="48"></a></span>
+  </footer>
+  <noscript><p class="panel">This calendar needs JavaScript turned on.</p></noscript>
+  <script type="module" src="../assets/app.js"></script>
+</body>
+</html>
