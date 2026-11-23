@@ -645,3 +645,36 @@ language sql stable security definer set search_path = public as $$
    where p.event_id = p_event and e.published and not p.hidden
    order by p.created_at
 $$;
+-- ───────────────────────── monthly newsletter (zine-style email to the confirmed list) ─────────────────────────
+create table if not exists public.newsletters (
+  id           bigint generated always as identity primary key,
+  club_id      text not null references public.clubs(id) on delete cascade,
+  subject      text not null default '' check (char_length(subject) <= 120),
+  issue_title  text not null default '' check (char_length(issue_title) <= 80),
+  intro        text not null default '' check (char_length(intro) <= 4000),
+  sections     jsonb not null default '[]'::jsonb,           -- [{heading, body}], validated by the Edge Function when sent
+  include_events boolean not null default true,              -- auto-list the next 45 days of events when it goes out
+  status       text not null default 'draft' check (status in ('draft','sent')),
+  issue_no     int,
+  sent_at      timestamptz,
+  sent_count   int,
+  created_by   uuid default auth.uid(),
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+create index if not exists newsletters_club on public.newsletters (club_id, created_at desc);
+alter table public.newsletters enable row level security;
+drop policy if exists news_admin_read   on public.newsletters;
+drop policy if exists news_admin_insert on public.newsletters;
+drop policy if exists news_admin_update on public.newsletters;
+drop policy if exists news_admin_delete on public.newsletters;
+create policy news_admin_read   on public.newsletters for select using (is_club_admin(club_id));
+create policy news_admin_insert on public.newsletters for insert with check (is_club_admin(club_id) and status = 'draft');
+create policy news_admin_update on public.newsletters for update using (is_club_admin(club_id) and status = 'draft') with check (is_club_admin(club_id) and status = 'draft');
+create policy news_admin_delete on public.newsletters for delete using (is_club_admin(club_id) and status = 'draft');
+revoke all on public.newsletters from anon, authenticated;
+grant select on public.newsletters to authenticated;
+grant insert (club_id, subject, issue_title, intro, sections, include_events) on public.newsletters to authenticated;
+grant update (subject, issue_title, intro, sections, include_events, updated_at) on public.newsletters to authenticated;
+grant delete on public.newsletters to authenticated;
+grant select, update on public.newsletters to service_role;

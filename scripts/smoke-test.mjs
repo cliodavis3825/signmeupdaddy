@@ -199,6 +199,10 @@ else {
     const r = await fnAnon('member', { action: 'request', email: 'smoke@example.com', elapsed_ms: 5000 }); const j = await r.json().catch(() => ({}));
     return expect(r.status === 400 && j.error === 'CAPTCHA_FAILED', `HTTP ${r.status} ${JSON.stringify(j)}`);
   });
+  await check('newsletter fn: refused without an organizer sign-in', async () => {
+    const r = await fnAnon('newsletter', { action: 'send', id: 1 });
+    return expect(r.status === 401 || r.status === 403 || r.status === 404, `HTTP ${r.status}`);
+  });
   await check('db: public can read event posts (RPC)', async () => {
     const r = await rest('rpc/list_event_posts', { method: 'POST', body: JSON.stringify({ p_event: uuid0 }) }); const j = await r.json();
     return expect(r.ok && Array.isArray(j), `HTTP ${r.status}`);
