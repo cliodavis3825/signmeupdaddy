@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /app/?*#/admin
+
+Sitemap: https://signmeupdaddy.com/sitemap.xml
