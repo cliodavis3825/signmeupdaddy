@@ -453,7 +453,7 @@ async function viewAdmin(a) {
   const club = clubs.find((c) => c.id === state.adminClub) || clubs.find((c) => c.id === CLUB) || clubs[0];
   const isSite = clubs[0].role === 'site';
   const canManage = club.role === 'site' || club.role === 'owner';
-  const tabs = [['events', 'Events'], ['list', 'Email list'], ...(canManage ? [['people', 'People & settings']] : []), ['activity', 'Activity'],
+  const tabs = [['events', 'Events'], ['list', 'Email list'], ['news', 'Newsletter'], ...(canManage ? [['people', 'People & settings']] : []), ['activity', 'Activity'],
     ...(isSite ? [['requests', 'New clubs'], ['reports', 'Issue reports']] : [])];
   if (!tabs.some(([k]) => k === state.adminTab)) state.adminTab = 'events';
 
@@ -472,7 +472,7 @@ async function viewAdmin(a) {
   $app.querySelector('[data-act=reset]')?.addEventListener('click', () => { a.resetDemo(); toast('Demo data reset'); route(); });
   $app.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { state.adminTab = b.dataset.tab; viewAdmin(a); });
   const el = $app.querySelector('#tab');
-  const tab = { events: eventsTab, list: listTab, people: peopleTab, activity: activityTab, requests: requestsTab, reports: reportsTab }[state.adminTab];
+  const tab = { events: eventsTab, list: listTab, news: newsTab, people: peopleTab, activity: activityTab, requests: requestsTab, reports: reportsTab }[state.adminTab];
   try { await tab(a, club, el, s); } catch (err) { el.innerHTML = `<p class="err">${esc(friendly(err))}</p>`; }
 }
 
@@ -536,6 +536,73 @@ async function listTab(a, club, el) {
     try { const r = await a.admin({ action: 'invite_to_list', club_id: club.id, emails }); msg.textContent = `Sent ${r.sent} invitation${r.sent === 1 ? '' : 's'}${r.skipped ? ` (${r.skipped} skipped: already on the list or invalid)` : ''}.`; el.querySelector('#inv').value = ''; }
     catch (err) { msg.textContent = friendly(err); } finally { ev.target.disabled = false; }
   };
+}
+
+async function newsTab(a, club, el) {
+  const rows = await a.newsletters(club.id);
+  const editing = state.newsEdit === 'new' ? { id: null, club_id: club.id, subject: '', issue_title: '', intro: '', sections: [], include_events: true, status: 'draft' } : rows.find((r) => r.id === state.newsEdit);
+  if (editing) return newsEditor(a, club, el, editing);
+  const issue = (r) => `<li><div><strong>${esc(r.subject || '(no subject yet)')}</strong> <span class="status ${r.status === 'sent' ? '' : 'waitlist'}">${r.status === 'sent' ? `sent · issue ${r.issue_no}` : 'draft'}</span><br><span>${r.status === 'sent' ? `${esc(fWhen(r.sent_at))} · ${r.sent_count} recipient${r.sent_count === 1 ? '' : 's'}` : `edited ${esc(fWhen(r.updated_at))}`}</span></div>
+    <div class="row-acts">${r.status === 'draft' ? `<button class="btn ghost sm" data-edit="${r.id}">Edit</button><button class="btn ghost sm" data-del="${r.id}">Delete</button>` : `<button class="btn ghost sm" data-view="${r.id}">View</button>`}</div></li>`;
+  el.innerHTML = `<section class="panel"><div class="admin-head"><h3>Newsletter</h3><button class="btn primary" data-new>+ New issue</button></div>
+    <p class="hint">A zine-style email for your confirmed email list: a letter from the organizers, an automatic "Coming up" list, and any extra sections you like. Always send yourself a test first.</p>
+    <ul class="admin-list">${rows.map(issue).join('') || '<li class="empty">No issues yet.</li>'}</ul></section>`;
+  el.querySelector('[data-new]').onclick = () => { state.newsEdit = 'new'; viewAdmin(a); };
+  el.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => { state.newsEdit = Number(b.dataset.edit); viewAdmin(a); });
+  el.querySelectorAll('[data-view]').forEach((b) => b.onclick = () => previewNews(a, Number(b.dataset.view)));
+  el.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => { if (await ask('Delete this draft?', 'Delete')) { await a.deleteNewsletter(Number(b.dataset.del)); viewAdmin(a); } });
+}
+
+async function previewNews(a, id) {
+  const w = window.open('', '_blank');
+  try {
+    const r = await a.newsFn({ action: 'render', id });
+    if (!w) return toast('Your browser blocked the preview window');
+    w.document.open(); w.document.write(r.html); w.document.close();
+  } catch (err) { w?.close(); toast(friendly(err)); }
+}
+
+async function newsEditor(a, club, el, n) {
+  const subs = await a.subscribers(club.id); const live = subs.filter((r) => r.status === 'active').length;
+  const month = new Date().toLocaleString([], { month: 'long', year: 'numeric' });
+  const secs = (n.sections || []).map((s) => ({ ...s }));
+  const secHtml = () => secs.map((s, i) => `<div class="panel sec" data-i="${i}"><label>Section heading<input data-f="heading" maxlength="80" value="${esc(s.heading)}" placeholder="e.g. Book club pick"></label>
+    <label>Text<textarea data-f="body" rows="4" maxlength="3000">${esc(s.body)}</textarea></label><button type="button" class="link" data-rm="${i}">Remove this section</button></div>`).join('');
+  el.innerHTML = `<section class="panel"><div class="admin-head"><h3>${n.id ? 'Edit issue' : 'New issue'}</h3><button class="link" data-back>← All issues</button></div>
+    <form id="nf" class="form">
+      <label>Email subject<input name="subject" maxlength="120" required value="${esc(n.subject)}" placeholder="518 Analog Club: ${esc(month)}"></label>
+      <label>Headline <span class="opt">(big text at the top)</span><input name="issue_title" maxlength="80" value="${esc(n.issue_title)}" placeholder="Winter is for board games"></label>
+      <label>Letter from the organizers<textarea name="intro" rows="6" maxlength="4000" placeholder="Hi everyone! Here's what's happening this month…">${esc(n.intro)}</textarea></label>
+      <label class="check"><input type="checkbox" name="include_events" ${n.include_events ? 'checked' : ''}> Add an automatic "Coming up" list (published events in the next 45 days, filled in when it sends)</label>
+      <div id="secs">${secHtml()}</div>
+      <p><button type="button" class="btn ghost sm" data-add ${secs.length >= 8 ? 'disabled' : ''}>+ Add a section</button> <span class="hint">Book pick, member spotlight, a tip, a photo link, anything.</span></p>
+      <p class="hint">Plain text. Blank line = new paragraph. Web addresses become links automatically.</p>
+      <div class="row-acts" style="justify-content:flex-start"><button class="btn primary" data-act="save">Save draft</button><button type="button" class="btn ghost" data-act="preview">Preview</button><button type="button" class="btn ghost" data-act="test">Email me a test</button><button type="button" class="btn danger" data-act="send">Send to ${live} subscriber${live === 1 ? '' : 's'}</button></div>
+      <p class="err" role="alert"></p>
+    </form></section>`;
+  const f = el.querySelector('#nf'); const err = f.querySelector('.err');
+  const read = () => {
+    const d = new FormData(f);
+    f.querySelectorAll('.sec').forEach((sec) => { const i = Number(sec.dataset.i); secs[i] = { heading: sec.querySelector('[data-f=heading]').value, body: sec.querySelector('[data-f=body]').value }; });
+    return { ...n, subject: String(d.get('subject')).trim(), issue_title: String(d.get('issue_title')).trim(), intro: String(d.get('intro')), include_events: f.include_events.checked, sections: secs.filter((s) => s.heading.trim() || s.body.trim()) };
+  };
+  const save = async () => { const saved = await a.saveNewsletter(read()); n = saved; state.newsEdit = saved.id; return saved; };
+  const redraw = () => { read(); el.querySelector('#secs').innerHTML = secHtml(); bindSecs(); el.querySelector('[data-add]').disabled = secs.length >= 8; };
+  const bindSecs = () => el.querySelectorAll('[data-rm]').forEach((b) => b.onclick = () => { secs.splice(Number(b.dataset.rm), 1); redraw(); });
+  bindSecs();
+  el.querySelector('[data-back]').onclick = () => { state.newsEdit = null; viewAdmin(a); };
+  el.querySelector('[data-add]').onclick = () => { read(); secs.push({ heading: '', body: '' }); redraw(); };
+  const run = async (btn, fn) => { err.textContent = ''; btn.disabled = true; try { await fn(); } catch (x) { err.textContent = friendly(x); } finally { btn.disabled = false; } };
+  f.onsubmit = (ev) => { ev.preventDefault(); run(ev.submitter || f.querySelector('[data-act=save]'), async () => { await save(); toast('Draft saved'); }); };
+  el.querySelector('[data-act=preview]').onclick = (ev) => run(ev.target, async () => { const s = await save(); await previewNews(a, s.id); });
+  el.querySelector('[data-act=test]').onclick = (ev) => run(ev.target, async () => { const s = await save(); const r = await a.newsFn({ action: 'test', id: s.id }); toast(`Test sent to ${r.to || 'you'}`); });
+  el.querySelector('[data-act=send]').onclick = (ev) => run(ev.target, async () => {
+    if (!f.subject.value.trim()) throw new Error('NEWS_EMPTY');
+    const s = await save();
+    if (!await ask(`Send "${s.subject}" to ${live} confirmed subscriber${live === 1 ? '' : 's'} now? This can't be undone.`, 'Send it')) return;
+    const r = await a.newsFn({ action: 'send', id: s.id });
+    toast(`Sent to ${r.sent} subscriber${r.sent === 1 ? '' : 's'}`); state.newsEdit = null; viewAdmin(a);
+  });
 }
 
 async function peopleTab(a, club, el, s) {
