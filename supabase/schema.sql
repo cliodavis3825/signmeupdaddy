@@ -678,3 +678,7 @@ grant insert (club_id, subject, issue_title, intro, sections, include_events) on
 grant update (subject, issue_title, intro, sections, include_events, updated_at) on public.newsletters to authenticated;
 grant delete on public.newsletters to authenticated;
 grant select, update on public.newsletters to service_role;
+
+-- ───────────────────────── hardening: pin search_path on helper functions ─────────────────────────
+alter function public.has_mfa() set search_path = '';
+alter function public.ping() set search_path = '';

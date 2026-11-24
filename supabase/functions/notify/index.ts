@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
   if (kind === 'announce') {
     const id = String(b.event_id ?? '');
     if (!UUID.test(id)) return reply(400, { error: 'BAD_REQUEST' });
-    const { data: e } = await db.from('events').select('*, clubs(name, timezone)').eq('id', id).maybeSingle();
+    const { data: e } = await db.from('events').select('*, clubs(name, timezone, contact_email)').eq('id', id).maybeSingle();
     if (!e) return reply(404, { error: 'EVENT_NOT_FOUND' });
     if (!(await isAdmin(e.club_id))) return reply(403, { error: 'NOT_ADMIN' });
     if (!e.published) return reply(409, { error: 'NOT_PUBLISHED' });
@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
       const u = unsubFooter(e.club_id, s.token, `You're getting this because you joined the ${e.clubs.name} email list.`);
       return {
         to: s.email, subject: `${e.title}: ${when}`,
-        headers: { 'List-Unsubscribe': `<${u.url}>` },
+        headers: { 'List-Unsubscribe': `<${u.url}>` }, reply_to: e.clubs.contact_email || undefined,
         text: `${e.title}\n${when}${e.location ? `\n${e.location}` : ''}\n\n${desc}\n\nDetails and signup: ${url}\n\n${u.text}`,
         html: layout(e.clubs.name,
           `<h1 style="margin:0 0 8px;font-size:22px;line-height:1.2">${h(e.title)}</h1>
@@ -57,7 +57,7 @@ ${desc ? `<p style="margin:0 0 8px">${h(desc).replace(/\n/g, '<br>')}</p>` : ''}
   if (kind === 'update') {
     const pid = Number(b.post_id);
     if (!Number.isInteger(pid)) return reply(400, { error: 'BAD_REQUEST' });
-    const { data: p } = await db.from('event_posts').select('*, events(*, clubs(name, timezone))').eq('id', pid).maybeSingle();
+    const { data: p } = await db.from('event_posts').select('*, events(*, clubs(name, timezone, contact_email))').eq('id', pid).maybeSingle();
     if (!p || p.kind !== 'update') return reply(404, { error: 'EVENT_NOT_FOUND' });
     const e = p.events;
     if (!(await isAdmin(e.club_id))) return reply(403, { error: 'NOT_ADMIN' });
@@ -70,7 +70,7 @@ ${desc ? `<p style="margin:0 0 8px">${h(desc).replace(/\n/g, '<br>')}</p>` : ''}
     const msgs: Msg[] = rows.map((r) => {
       const manage = appUrl(e.club_id, `#/cancel/${r.cancel_token}`);
       return {
-        to: r.email, subject: `Update: ${e.title}`,
+        to: r.email, subject: `Update: ${e.title}`, reply_to: e.clubs.contact_email || undefined,
         text: `Update for ${e.title} (${when}):\n\n${p.body}\n\nEvent page: ${url}\nCan't make it now? ${manage}`,
         html: layout(e.clubs.name,
           `<h1 style="margin:0 0 4px;font-size:20px;line-height:1.2">Update: ${h(e.title)}</h1>
