@@ -1,6 +1,10 @@
 # Pings Supabase every 3 days so the free-plan project isn't paused for inactivity.
 # Add repo secrets SUPABASE_URL and SUPABASE_ANON_KEY (Settings → Secrets and variables → Actions).
 name: supabase-keepalive
+# GitHub switches scheduled workflows off after 60 days without repo activity (public repos).
+# The second step re-enables all three scheduled workflows on every run to reset that timer.
+permissions:
+  actions: write
 on:
   schedule:
     - cron: "17 14 */3 * *"
@@ -17,3 +21,10 @@ jobs:
           if [ -z "$URL" ]; then echo "No SUPABASE_URL secret yet — skipping."; exit 0; fi
           curl -fsS -X POST "$URL/rest/v1/rpc/ping" \
             -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{}'
+      - name: Keep scheduled workflows enabled
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for wf in keepalive.yml notify.yml backup.yml; do
+            gh api -X PUT "repos/${{ github.repository }}/actions/workflows/$wf/enable" || echo "could not refresh $wf"
+          done

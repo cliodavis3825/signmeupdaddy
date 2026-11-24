@@ -21,10 +21,10 @@ With `assets/config.js` left blank it runs in **demo mode** (data saved in the b
 
 ## Files
 ```
-index.html            app shell (calendar, event, cancel, my signups, admin)
+index.html            landing page; app/index.html is the app shell (calendar, event, cancel, my signups, admin)
 assets/config.js      ← the only file you edit (Supabase URL, anon key, Turnstile site key)
 assets/api.js         data layer: Supabase or demo
-assets/app.js         UI + routing (#/, #/e/<id>, #/cancel/<token>, #/mine, #/admin)
+assets/app.js         UI + routing (#/, #/e/<id>, #/cancel/<token>, #/me, #/admin, #/subscribe, #/report)
 assets/util.js        dates, .ics, CSV
 assets/app.css
 supabase/schema.sql   tables, row-level security, signup/cancel/waitlist functions, rate limit, audit log
@@ -107,7 +107,7 @@ supabase functions deploy ical
 
 How it works: every email is a row in the `outbox` table first (written by a database trigger), then delivered. If Resend is down, rows wait and are retried up to 6 times, and each send carries an idempotency key so a retry can't double-send. Confirmations go out immediately from the signup function; promotions and reminders go out on the next notify run. Restoring a backup with `set smud.restoring = on` does not re-email anyone.
 
-**Scheduled jobs caveat:** GitHub runs schedules best-effort (runs can be delayed), and in a **public** repo it switches schedules off after 60 days with no repository activity. Keep the repo private, push something every couple of months, or move the notify/keepalive pings to Supabase Cron.
+**Scheduled jobs caveat:** GitHub runs schedules best-effort (runs can be delayed), and in a **public** repo it switches schedules off after 60 days with no repository activity. The keepalive workflow re-enables all scheduled workflows each time it runs, which should reset that timer; if a schedule ever stops, push any commit or click Enable on the Actions tab.
 
 #### What the auth flow now does
 - **Organizers**

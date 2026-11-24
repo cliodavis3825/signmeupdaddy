@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
 
   const auth = req.headers.get('authorization') ?? '';
   const me = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: auth } }, auth: { persistSession: false } });
-  const { data: n } = await db.from('newsletters').select('*, clubs(name, timezone)').eq('id', id).maybeSingle();
+  const { data: n } = await db.from('newsletters').select('*, clubs(name, timezone, contact_email)').eq('id', id).maybeSingle();
   if (!n) return reply(404, { error: 'BAD_REQUEST' });
   const { data: isAdmin } = await me.rpc('is_club_admin', { p_club: n.club_id });
   if (!isAdmin) return reply(403, { error: 'NOT_ADMIN' });
@@ -100,7 +100,7 @@ Deno.serve(async (req) => {
     const { data: u } = await me.auth.getUser(auth.replace(/^Bearer\s+/i, ''));
     const to = u?.user?.email; if (!to) return reply(401, { error: 'NOT_SIGNED_IN' });
     const e = build(appUrl(n.club_id, '#/'));
-    try { await sendAll([{ to, subject: `[TEST] ${n.subject}`, html: e.html, text: e.text }]); return reply(200, { sent: 1, to }); }
+    try { await sendAll([{ to, subject: `[TEST] ${n.subject}`, html: e.html, text: e.text, reply_to: n.clubs.contact_email || undefined }]); return reply(200, { sent: 1, to }); }
     catch (x) { return reply(500, { error: String((x as Error).message) === 'MAIL_NOT_CONFIGURED' ? 'MAIL_NOT_CONFIGURED' : 'MAIL_FAILED' }); }
   }
 
@@ -115,7 +115,7 @@ Deno.serve(async (req) => {
   if (!claimed?.length) return reply(409, { error: 'ALREADY_SENT' });
   const msgs: Msg[] = subs.map((s) => {
     const url = appUrl(n.club_id, `#/list/unsub/${s.token}`); const e = build(url);
-    return { to: s.email, subject: n.subject, html: e.html, text: e.text, headers: { 'List-Unsubscribe': `<${url}>` } };
+    return { to: s.email, subject: n.subject, html: e.html, text: e.text, headers: { 'List-Unsubscribe': `<${url}>` }, reply_to: n.clubs.contact_email || undefined };
   });
   try {
     const sent = await sendAll(msgs);
